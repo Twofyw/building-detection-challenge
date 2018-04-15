@@ -17,6 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 sys.path.insert(0, 'deeplab/pytorch-deeplab-resnet')
 import deeplab_resnet
 from docopt import docopt
+from functools import partial
 
 MODEL_NAME = 'v13'
 ORIGINAL_SIZE = 650
@@ -136,12 +137,11 @@ def get_data(area_id, is_test, max_workers=3, debug=False):
     
     fn_im = FMT_VALTEST_MASK_STORE.format(prefix) if is_test\
 	else FMT_VALTRAIN_MASK_STORE.format(prefix)
-    y_val = np.empty((df_train.shape[0], ORIGINAL_SIZE, ORIGINAL_SIZE, 1))
-
     if debug:
         slice_n = 10
     else:
         slice_n = None
+    y_val = np.empty((slice_n if debug else df_train.shape[0], ORIGINAL_SIZE, ORIGINAL_SIZE, 1))
     with tb.open_file(fn_im, 'r') as f:                                         
         for i, image_id in tqdm.tqdm_notebook(enumerate(df_train.ImageId.tolist()[:slice_n]),\
 		total=df_train.shape[0], desc='ims'):
@@ -149,7 +149,7 @@ def get_data(area_id, is_test, max_workers=3, debug=False):
             y_val[i] = np.array(f.get_node(fn))[..., None]
             
     fn_im = FMT_VALTEST_IM_FOLDER if is_test else FMT_VALTRAIN_IM_FOLDER
-    X_val = np.empty((df_train.shape[0], ORIGINAL_SIZE, ORIGINAL_SIZE, 3))
+    X_val = np.empty((slice_n if debug else df_train.shape[0], ORIGINAL_SIZE, ORIGINAL_SIZE, 3))
     if max_workers == 1:
         for i, image_id in tqdm.tqdm_notebook(enumerate(df_train.ImageId.tolist()[:slice_n]),\
 		total=df_train.shape[0], desc='ims'):
@@ -175,13 +175,47 @@ def get_dataset(datapath, debug=False):
     return (trn_x,trn_y), (val_x,val_y)
 
 class ArraysSingleDataset(BaseDataset):
-    def __init__(self, is_trn, y, transform):
+    def __init__(self, x, y, transform):
         # input: ch x w x h
+        self.x, self.y = x, y
+        self.sz = self.x[0].shape[1]
+        super().__init__(transform)
+        
+    def get_im(self, i, is_y):
+        if is_y:
+            im = self.y[i//num_slice]
+        else:
+            im = self.x[i//num_slice]
+        slice_pos = i % num_slice
+        a = np.sqrt(num_slice)
+        cut_i = slice_pos // a
+        cut_j = slice_pos % a
+        stride = (self.sz - sz) // a
+        cut_x = int(cut_j * stride)
+        cut_y = int(cut_i * stride)
+        return im[cut_x:cut_x + sz, cut_y:cut_y + sz]
+    
+    def get_x(self, i): 
+        global dummy
+        print(dummy)
+
+        return self.get_im(i, False)
+    def get_y(self, i): return self.get_im(i, True)
+    def get_n(self): return self.x.shape[0] * num_slice
+    def get_sz(self): return self.sz
+    def get_c(self): return 1
+    def denorm(self, arr):
+        if type(arr) is not np.ndarray: arr = to_np(arr)
+        if len(arr.shape)==3: arr = arr[None]
+#         return np.clip(self.transform.denorm(np.rollaxis(arr,1,4)), 0, 1)
+        return self.transform.denorm(np.rollaxis(arr,1,4))
+
+(trn_x,trn_y), (val_x,val_y) = (None, None), (None, None)
+class PublicArrayDataset(BaseDataset):
+    def __init__(self, is_trn, y, transform):
         self.is_trn = is_trn
         self.sz = trn_x[0].shape[1] if self.is_trn else val_x[0].shape[1]
         super().__init__(transform)
-
-        
     def get_im(self, i, is_y):
         if is_y:
             im = trn_y[i//num_slice] if self.is_trn else val_y[i//num_slice]
@@ -195,7 +229,7 @@ class ArraysSingleDataset(BaseDataset):
         cut_x = int(cut_j * stride)
         cut_y = int(cut_i * stride)
         return im[cut_x:cut_x + sz, cut_y:cut_y + sz]
-    
+
     def get_x(self, i): return self.get_im(i, False)
     def get_y(self, i): return self.get_im(i, True)
     def get_n(self): return trn_x.shape[0] * num_slice if self.is_trn else val_x.shape[0] * num_slice
@@ -213,9 +247,9 @@ class UpsampleModel():
         self.cut_base = cut_base
 
     def get_layer_groups(self, precompute):
-        c = list(children(self.model.module))
+        c = children(self.model.module)
         return [c[:self.cut_base],
-               c[self.cut_base:]]
+           c[self.cut_base:]]
 
 def sep_iou(y_pred, y_true, thresh=0.5):
     return np.array([jaccard_coef(p, t) for (p, t) in zip(y_pred, y_true)])
@@ -245,13 +279,11 @@ def jaccard_coef(y_pred, y_true=None, thresh=0.5):
     jac = (intersection + smooth) / (sum_ - intersection + smooth)
     return np.mean(jac)
 
-def jaccard_coef_parallel(y_pred, y_true, thresh=0.5, num_workers=None):
-    if num_workers is None:
-        num_workers = _num_workers
+def jaccard_coef_parallel(y_pred, y_true, thresh=0.5, num_workers=8):
     if num_workers == 0:
-        return jaccard_coef(y_pred, y_true, thresh=0.5)
+        return jaccard_coef(y_pred, y_true, thresh=thresh)
     with ThreadPoolExecutor(max_workers=num_workers) as e:
-        jac = list(e.map(jaccard_coef, zip(y_pred, y_true)))
+        jac = list(e.map(partial(jaccard_coef, thresh=thresh), zip(y_pred, y_true)))
         return np.mean(jac)
 
 def get_rgb_mean_stat(area_id):
@@ -264,8 +296,11 @@ def get_rgb_mean_stat(area_id):
     std = [np.std(im_mean[i]) for i in range(3)]
     return np.stack([np.array(mean), np.array(std)])
 
-def get_md_model(datapaths, device_ids=None, model_name='unet'):
+def get_md_model(datapaths, data, bs, device_ids, num_workers, model_name='unet', global_dataset=False):
 #     (trn_x, trn_y), (val_x, val_y) = trn, val
+    if global_dataset:
+        global trn_x,trn_y, val_x,val_y
+        
     aug_tfms = transforms_top_down
     for o in aug_tfms: o.tfm_y = TfmType.CLASS
         
@@ -273,8 +308,11 @@ def get_md_model(datapaths, device_ids=None, model_name='unet'):
     stats = np.mean([get_rgb_mean_stat(area_id) for area_id in area_ids], axis=0)
     tfms = tfms_from_stats(stats, sz, crop_type=CropType.NO, tfm_y=TfmType.CLASS, aug_tfms=aug_tfms)
     
-    datasets = ImageData.get_ds(ArraysSingleDataset, (trn_x,trn_y), (val_x,val_y), tfms)
-    md = ImageData('data', datasets, bs, num_workers=_num_workers, classes=None)
+    (trn_x,trn_y), (val_x,val_y) = data
+    dataset = PublicArrayDataset if global_dataset else ArraysSingleDataset
+    trn, val = ((True, True), (True, True)) if global_dataset else ((trn_x,trn_y), (val_x,val_y))
+    datasets = ImageData.get_ds(dataset, trn, val, tfms)
+    md = ImageData('data', datasets, bs, num_workers=num_workers, classes=None)
     denorm = md.trn_ds.denorm
 
     if not Path(MODEL_DIR).exists():
@@ -282,17 +320,15 @@ def get_md_model(datapaths, device_ids=None, model_name='unet'):
 
     if model_name == 'deeplab':
         model = deeplab_resnet.Res_Deeplab(2)
-        cut_base = 0
+        cut_base = 1
     elif model_name == 'unet':
         model = UNet16(pretrained='vgg')
         cut_base = 8
     elif model_name == 'linknet':
-        model = LinkNet34
-        cut_base = 0
+        model = LinkNet34(pretrained=True)
+        cut_base = 8
 
     net = model.cuda()
-    if device_ids is None:
-        device_ids = _device_ids
     net = nn.DataParallel(net, device_ids)
     models = UpsampleModel(net, cut_base=cut_base)
     return md, models, denorm
@@ -300,34 +336,27 @@ def get_md_model(datapaths, device_ids=None, model_name='unet'):
 def expanded_loss(pred, target):
     return F.binary_cross_entropy_with_logits(pred[:,0], target)
 
-def learner_on_dataset(datapath, model_name='unet', debug=False):
-    #global trn_x, trn_y, val_x, val_y
-    #global last_datapath
-    
-    #last_datapath = datapath
-    (trn_x,trn_y), (val_x,val_y) = get_dataset(datapath, debug=debug)
-    md, model, denorm = get_md_model([datapath], model_name=model_name)
-    print('Data finished loading:', datapath)
+def get_learn(md, model):
     learn=ConvLearner(md, model)
     learn.opt_fn=optim.Adam
     learn.crit=crit
     learn.metrics=[metrics]
-    data = (trn_x,trn_y), (val_x,val_y) 
+    return learn
+    
+def learner_on_dataset(datapath, bs, device_ids, num_workers, model_name='unet', debug=False, data=None, global_dataset=False):
+    if data is None:
+        data = (trn_x,trn_y), (val_x,val_y) = get_dataset(datapath, debug=debug)
+    md, model, denorm = get_md_model([datapath], data, bs, device_ids, num_workers, model_name=model_name, global_dataset=global_dataset)
+    print('Data finished loading:', datapath)
+    learn = get_learn(md, model)
     return learn, denorm, data
 
-def load_backup_learn(old_learn, model_name='unet'):
-    #global last_datapath
-    ### only works before any new commands is issued due to extension reloading clearing memory
-    
-    md, model, denorm = get_md_model([last_datapath], model_name=model_name)
-    learn=ConvLearner(md, model)
-    learn.opt_fn=optim.Adam
-    learn.crit=crit
-    learn.metrics=[metrics]
-    return learn, denorm
+#def load_backup_learn(datapath, data, bs, device_ids, num_workers, model_name='unet', global_dataset=False):
+#   md, model, denorm = get_md_model([datapath], data, bs, device_ids, num_workers, model_name=model_name, global_dataset=global_dataset)
+#   learn = get_learn(md, model)
+#   return learn, denorm
 
 def plot_lr_loss(learn, save_name=None):
-    # plot
     fig, ax = plt.subplots(1, 2, figsize=(8, 4))
     fig.tight_layout()
     ax[0].plot(learn.sched.iterations, learn.sched.losses)
@@ -339,7 +368,7 @@ def plot_lr_loss(learn, save_name=None):
         if not save_path.exists(): save_path.mkdir(parent=True)
         fig.savefig(str(save_path / Path(save_name)) + '.png')
 
-def train_and_plot(idx, fn, lrs, n_cycles, wds=[0.025/3, 0.025], use_wd_sched=False, **kwargs):
+def train_and_plot(learn, idx, fn, lrs, n_cycles, wds=[0.025/3, 0.025], use_wd_sched=False, **kwargs):
     learn.fit(lrs, n_cycles, wds=wds, **kwargs)
     save_name = fn + '_' + str(idx)
     learn.save(save_name)
@@ -347,6 +376,8 @@ def train_and_plot(idx, fn, lrs, n_cycles, wds=[0.025/3, 0.025], use_wd_sched=Fa
     
 def bool_pred(pred, thresh=0.5):
     return to_np(pred > thresh)
+
+
 
 def plot_worse_cross_entropy(tta, shift=0, n_ims=9, is_best=False, step=2):
     pass
@@ -412,8 +443,8 @@ def train_on_full_dataset(epochs, lrs, wds, sequential=False, save_starter='full
 
             learn.save(epoch_save_name_base + str(out_epoch))
             
-            save_name = epoch_save_name_base + str(out_epoch) + '_' + str(i) + '.png'
-            plot_lr_loss(learn, Path(save_path) / Path(save_name))
+            save_name = epoch_save_name_base + str(out_epoch) + '_' + str(i)
+            plot_lr_loss(learn, Path(save_name))
 
 crit = expanded_loss
 metrics = jaccard_coef_parallel
