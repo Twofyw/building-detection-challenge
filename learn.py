@@ -25,22 +25,11 @@ num_slice = 9
 STRIDE_SZ = 197
 PATH = 'data/'
 
-_num_gpus, _gpu_start, _num_workers, _device_ids, _bs = None, None, None, None, None
-_debug = None
-learn, denorm = None, None
-(trn_x,trn_y), (val_x,val_y) = (None, None), (None, None)
-last_datapath = None
-
-
-def learn_init(num_gpus=1, gpu_start=0, bs=32, debug=False):
-    global _num_gpus, _gpu_start, _num_workers, _device_ids, _bs, _debug
-    _num_gpus = num_gpus
-    _gpu_start = gpu_start
-    _num_workers = 3 * num_gpus
-    device_ids = range(gpu_start, gpu_start + num_gpus)
-    _bs = 32 * num_gpus 
-    _debug = debug
-    torch.cuda.set_device(_gpu_start)
+#_num_gpus, _gpu_start, _num_workers, _device_ids, _bs = None, None, None, None, None
+#_debug = None
+#learn, denorm = None, None
+#(trn_x,trn_y), (val_x,val_y) = (None, None), (None, None)
+#last_datapath = None
 
 BASE_DIR = "data/train"
 BASE_TEST_DIR = "data/test"
@@ -138,7 +127,8 @@ FMT_FULLMODEL_LAST_PATH = MODEL_DIR + "/{}_full_weights_last.h5"
 
 datapaths = ['data/train/AOI_3_Paris_Train', 'data/train/AOI_2_Vegas_Train', 'data/train/AOI_4_Shanghai_Train', 'data/train/AOI_5_Khartoum_Train']
 ################################################################
-def get_data(area_id, is_test, max_workers=3):
+
+def get_data(area_id, is_test, max_workers=3, debug=False):
     prefix = area_id_to_prefix(area_id)
     fn_train = FMT_VALTEST_IMAGELIST_PATH.format(prefix=prefix) if is_test\
 	else FMT_VALTRAIN_IMAGELIST_PATH.format(prefix=prefix)
@@ -148,7 +138,7 @@ def get_data(area_id, is_test, max_workers=3):
 	else FMT_VALTRAIN_MASK_STORE.format(prefix)
     y_val = np.empty((df_train.shape[0], ORIGINAL_SIZE, ORIGINAL_SIZE, 1))
 
-    if _debug:
+    if debug:
         slice_n = 10
     else:
         slice_n = None
@@ -175,19 +165,18 @@ def get_data(area_id, is_test, max_workers=3):
     X_val, y_val = X_val.astype('float'), y_val.astype('float')
     return X_val, y_val
 
-def get_dataset(datapath):
+def get_dataset(datapath, debug=False):
     area_id = directory_name_to_area_id(datapath)
     prefix = area_id_to_prefix(area_id)
-    trn_x, trn_y = get_data(area_id, False)
+    trn_x, trn_y = get_data(area_id, False, debug=debug)
     trn_y = np.broadcast_to(trn_y, [trn_y.shape[0], ORIGINAL_SIZE, ORIGINAL_SIZE, 3])
-    val_x, val_y = get_data(area_id, True)
+    val_x, val_y = get_data(area_id, True, debug=debug)
     val_y = np.broadcast_to(val_y, [val_y.shape[0], ORIGINAL_SIZE, ORIGINAL_SIZE, 3])
     return (trn_x,trn_y), (val_x,val_y)
 
 class ArraysSingleDataset(BaseDataset):
     def __init__(self, is_trn, y, transform):
         # input: ch x w x h
-        global trn_x, trn_y, val_x, val_y
         self.is_trn = is_trn
         self.sz = trn_x[0].shape[1] if self.is_trn else val_x[0].shape[1]
         super().__init__(transform)
@@ -284,8 +273,8 @@ def get_md_model(datapaths, device_ids=None, model_name='unet'):
     stats = np.mean([get_rgb_mean_stat(area_id) for area_id in area_ids], axis=0)
     tfms = tfms_from_stats(stats, sz, crop_type=CropType.NO, tfm_y=TfmType.CLASS, aug_tfms=aug_tfms)
     
-    datasets = ImageData.get_ds(ArraysSingleDataset, (True, True), (False, False), tfms)
-    md = ImageData('data', datasets, _bs, num_workers=_num_workers, classes=None)
+    datasets = ImageData.get_ds(ArraysSingleDataset, (trn_x,trn_y), (val_x,val_y), tfms)
+    md = ImageData('data', datasets, bs, num_workers=_num_workers, classes=None)
     denorm = md.trn_ds.denorm
 
     if not Path(MODEL_DIR).exists():
@@ -309,25 +298,26 @@ def get_md_model(datapaths, device_ids=None, model_name='unet'):
     return md, models, denorm
 
 def expanded_loss(pred, target):
-#     pred = torch.clamp(pred, 0, 1)
     return F.binary_cross_entropy_with_logits(pred[:,0], target)
 
-def learner_on_dataset(datapath, model_name='unet'):
-    global trn_x, trn_y, val_x, val_y
-    global last_datapath
+def learner_on_dataset(datapath, model_name='unet', debug=False):
+    #global trn_x, trn_y, val_x, val_y
+    #global last_datapath
     
-    last_datapath = datapath
-    (trn_x,trn_y), (val_x,val_y) = get_dataset(datapath)
+    #last_datapath = datapath
+    (trn_x,trn_y), (val_x,val_y) = get_dataset(datapath, debug=debug)
     md, model, denorm = get_md_model([datapath], model_name=model_name)
     print('Data finished loading:', datapath)
     learn=ConvLearner(md, model)
     learn.opt_fn=optim.Adam
     learn.crit=crit
     learn.metrics=[metrics]
-    return learn, denorm
+    data = (trn_x,trn_y), (val_x,val_y) 
+    return learn, denorm, data
 
-def load_backup_learn(model_name='unet'):
-    global last_datapath
+def load_backup_learn(old_learn, model_name='unet'):
+    #global last_datapath
+    ### only works before any new commands is issued due to extension reloading clearing memory
     
     md, model, denorm = get_md_model([last_datapath], model_name=model_name)
     learn=ConvLearner(md, model)
@@ -434,16 +424,15 @@ Usage:
 
 Options:
     -h, --help                  Print this message
-    --num_gpus=<int>
-    --gpu_start=<int>           First available gpu
-    --bs=<int>                  Batch size
-    --full
+    
+    Read code for more.
 """
 if __name__ == '__main__':
     args = docopt(docstr)
     print(args)
     num_gpus = args['--num_gpus']
     gpu_start = args['--gpu_start']
+    torch.cuda.set_device(gpu_start)
     num_workers = 3 * num_gpus
     device_ids = range(gpu_start, gpu_start + num_gpus)
     torch.cuda.set_device(gpu_start)
@@ -457,11 +446,12 @@ if __name__ == '__main__':
     lr_div = args['--lr_div']
     save_starter = args['--save_starter']
     model_name = args['--model_name']
+    debug = args['--debug']
 
     if opt == 'full':
         sequential = args['--sequential']
-        train_on_full_dataset(epochs=epochs, lrs=[lr/lr_div, lr], sequential, wds=[wd/lr_div, wd],
-                use_wd_sched=use_wd_sched, use_wd_sched=False, save_starter='full_dataset_in_0', model_name=model_name)
+        train_on_full_dataset(epochs=epochs, lrs=[lr/lr_div, lr], sequential=sequential, wds=[wd/lr_div, wd],
+                use_wd_sched=use_wd_sched, save_starter='full_dataset_in_0', model_name=model_name)
     else:
         city_code = args['city_code']
         learn, denorm = learner_on_dataset(datapaths[city_code])
@@ -472,3 +462,14 @@ if __name__ == '__main__':
         train_and_plot(save_idx, save_name, epoch=epochs, lrs=lrs, wds=wds, use_wd_sched=use_wd_sched,
                 cycle_len=cycle_len, use_clr=None,
                 best_save_name=save_name)
+
+def learn_init(num_gpus=1, gpu_start=0, bs=32, debug=False):
+    global _num_gpus, _gpu_start, _num_workers, _device_ids, _bs, _debug
+    _num_gpus = num_gpus
+    _gpu_start = gpu_start
+    _num_workers = 3 * num_gpus
+    device_ids = range(gpu_start, gpu_start + num_gpus)
+    _bs = 32 * num_gpus 
+    _debug = debug
+    torch.cuda.set_device(_gpu_start)
+
