@@ -138,7 +138,7 @@ def get_data(area_id, is_test, max_workers=3, debug=False):
     fn_im = FMT_VALTEST_MASK_STORE.format(prefix) if is_test\
 	else FMT_VALTRAIN_MASK_STORE.format(prefix)
     if debug:
-        slice_n = 10
+        slice_n = 50
     else:
         slice_n = None
     y_val = np.empty((slice_n if debug else df_train.shape[0], ORIGINAL_SIZE, ORIGINAL_SIZE, 1))
@@ -214,6 +214,7 @@ class PublicArrayDataset(BaseDataset):
         self.is_trn = is_trn
         self.sz_i = trn_x[0].shape[1] if self.is_trn else val_x[0].shape[1]
         self.sz = sz
+        self.num_slice = num_slice
         super().__init__(transform)
     def get_im(self, i, is_y):
         if is_y:
@@ -412,16 +413,14 @@ def plot_ims(labels, data):
             col.set_xlabel(labels[i][j])
     fig.tight_layout()
 
-def plot_worse_preds(preds, y, learn, crit=jaccard_coef, shift=0, n_ims=9,
+def plot_worse_preds(x, y, preds, learn, crit=jaccard_coef, scores=None, shift=0, n_ims=9,
         is_best=False, thresh=0.5, **kwargs):
-    scores = sep_parallel(crit, preds, y, **kwargs)
+    if scores is None:
+        scores = sep_parallel(crit, T(preds), T(y), **kwargs)
     lowest_iou_idx = np.argsort(scores)
     if is_best:
         lowest_iou_idx = np.flip(lowest_iou_idx, 0)
     lowest_iou_idx = lowest_iou_idx[shift: n_ims + shift]
-
-    x, _ = learn.data.val_dl.get_batch(lowest_iou_idx)
-    x = learn.data.val_ds.denorm(x).squeeze(); y = y.squeeze()
     labels = [["x"] * n_ims, 
         ["gt"] * n_ims,
         scores[lowest_iou_idx],
@@ -429,13 +428,14 @@ def plot_worse_preds(preds, y, learn, crit=jaccard_coef, shift=0, n_ims=9,
     bp = bool_pred(preds, thresh=thresh)
     xl, yl, predsl, bpl = [], [], [], []
     for i in lowest_iou_idx:
-        xl.append(x[i])
+        xl.append(learn.data.trn_ds.denorm(x[i]).squeeze())
         yl.append(y[i])
         predsl.append(preds[i])
         bpl.append(bp[i])
     data = zip(xl, yl, predsl, bpl)    
     labels = zip(*labels)
     plot_ims(labels, data)
+    return scores
 
 # sequential: if True, in one outer loop, every dataset is trained only once
 def train_on_full_dataset(epochs, lrs, wds, sequential=False, save_starter='full_dataset_beginner',\

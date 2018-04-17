@@ -3,4 +3,3 @@ __pycache__
 .ipynb_checkpoints
 u-net-release
 models
-data_train.pickle
