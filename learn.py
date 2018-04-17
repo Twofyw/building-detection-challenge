@@ -334,6 +334,9 @@ def get_md_model(datapaths, data, bs, device_ids, num_workers, model_name='unet'
     if model_name == 'deeplab':
         model = deeplab_resnet.Res_Deeplab(1) # change to 1
         cut_base = 1
+    elif model_name == 'deeplab2':
+        model = deeplab_resnet.Res_Deeplab(2) # change to 1
+        cut_base = 1
     elif model_name == 'unet':
         model = UNet16(pretrained='vgg')
         cut_base = 8

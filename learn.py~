@@ -334,6 +334,9 @@ def get_md_model(datapaths, data, bs, device_ids, num_workers, model_name='unet'
     if model_name == 'deeplab':
         model = deeplab_resnet.Res_Deeplab(1) # change to 1
         cut_base = 1
+    elif model_name == 'deeplab2':
+        model = deeplab_resnet.Res_Deeplab(2) # change to 1
+        cut_base = 1
     elif model_name == 'unet':
         model = UNet16(pretrained='vgg')
         cut_base = 8
@@ -406,7 +409,7 @@ def plot_ims(labels, data):
     labels, data = list(labels), list(data)
     n_ims = len(data)
     cols = len(list(zip(*data)))
-    fig, ax = plt.subplots(n_ims, cols, figsize=(4*cols, 4*n_ims))
+    fig, ax = plt.subplots(n_ims, cols, figsize=(3*cols, 3*n_ims))
     for i, row in enumerate(ax):
         for j, col in enumerate(row):
             col.imshow(data[i][j])
