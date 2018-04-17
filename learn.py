@@ -175,33 +175,31 @@ def get_dataset(datapath, debug=False):
     return (trn_x,trn_y), (val_x,val_y)
 
 class ArraysSingleDataset(BaseDataset):
-    def __init__(self, x, y, transform):
+    def __init__(self, x, y, transform, num_slice=9, sz=192):
         # input: ch x w x h
         self.x, self.y = x, y
-        self.sz = self.x[0].shape[1]
+        self.sz_i = self.x[0].shape[1]
+        self.sz = sz
+        self.num_slice = num_slice
         super().__init__(transform)
         
     def get_im(self, i, is_y):
         if is_y:
-            im = self.y[i//num_slice]
+            im = self.y[i//self.num_slice]
         else:
-            im = self.x[i//num_slice]
-        slice_pos = i % num_slice
-        a = np.sqrt(num_slice)
+            im = self.x[i//self.num_slice]
+        slice_pos = i % self.num_slice
+        a = np.sqrt(self.num_slice)
         cut_i = slice_pos // a
         cut_j = slice_pos % a
-        stride = (self.sz - sz) // a
+        stride = (self.sz_i - self.sz) // a
         cut_x = int(cut_j * stride)
         cut_y = int(cut_i * stride)
-        return im[cut_x:cut_x + sz, cut_y:cut_y + sz]
+        return im[cut_x:cut_x + self.sz, cut_y:cut_y + self.sz]
     
-    def get_x(self, i): 
-        global dummy
-        print(dummy)
-
-        return self.get_im(i, False)
+    def get_x(self, i): return self.get_im(i, False)
     def get_y(self, i): return self.get_im(i, True)
-    def get_n(self): return self.x.shape[0] * num_slice
+    def get_n(self): return self.x.shape[0] * self.num_slice
     def get_sz(self): return self.sz
     def get_c(self): return 1
     def denorm(self, arr):
@@ -212,27 +210,28 @@ class ArraysSingleDataset(BaseDataset):
 
 (trn_x,trn_y), (val_x,val_y) = (None, None), (None, None)
 class PublicArrayDataset(BaseDataset):
-    def __init__(self, is_trn, y, transform):
+    def __init__(self, is_trn, y, transform, num_slice=9, sz=192):
         self.is_trn = is_trn
-        self.sz = trn_x[0].shape[1] if self.is_trn else val_x[0].shape[1]
+        self.sz_i = trn_x[0].shape[1] if self.is_trn else val_x[0].shape[1]
+        self.sz = sz
         super().__init__(transform)
     def get_im(self, i, is_y):
         if is_y:
-            im = trn_y[i//num_slice] if self.is_trn else val_y[i//num_slice]
+            im = trn_y[i//self.num_slice] if self.is_trn else val_y[i//self.num_slice]
         else:
-            im = trn_x[i//num_slice] if self.is_trn else val_x[i//num_slice]
-        slice_pos = i % num_slice
-        a = np.sqrt(num_slice)
+            im = trn_x[i//self.num_slice] if self.is_trn else val_x[i//self.num_slice]
+        slice_pos = i % self.num_slice
+        a = np.sqrt(self.num_slice)
         cut_i = slice_pos // a
         cut_j = slice_pos % a
-        stride = (self.sz - sz) // a
+        stride = (self.sz_i - self.sz) // a
         cut_x = int(cut_j * stride)
         cut_y = int(cut_i * stride)
-        return im[cut_x:cut_x + sz, cut_y:cut_y + sz]
+        return im[cut_x:cut_x + self.sz, cut_y:cut_y + self.sz]
 
     def get_x(self, i): return self.get_im(i, False)
     def get_y(self, i): return self.get_im(i, True)
-    def get_n(self): return trn_x.shape[0] * num_slice if self.is_trn else val_x.shape[0] * num_slice
+    def get_n(self): return trn_x.shape[0] * self.num_slice if self.is_trn else val_x.shape[0] * self.num_slice
     def get_sz(self): return self.sz
     def get_c(self): return 1
     def denorm(self, arr):
@@ -279,6 +278,19 @@ def jaccard_coef(y_pred, y_true=None, thresh=0.5):
     jac = (intersection + smooth) / (sum_ - intersection + smooth)
     return np.mean(jac)
 
+def sep_parallel(f, y_pred, y_true, num_workers=8, **kwargs):
+    scores = np.empty(y_true.shape[0])
+    if num_workers == 0:
+        for i, (p, y) in enumerate(zip(y_pred, y_true)):
+            scores[i] = f(p, y, **kwargs)
+        return scores
+        
+    with ThreadPoolExecutor(max_workers=num_workers) as e:
+        res = e.map(partial(f, **kwargs), y_pred, y_true)
+        for i, score in enumerate(res):
+            scores[i] = score
+        return scores
+    
 def jaccard_coef_parallel(y_pred, y_true, thresh=0.5, num_workers=8):
     if num_workers == 0:
         return jaccard_coef(y_pred, y_true, thresh=thresh)
@@ -296,7 +308,7 @@ def get_rgb_mean_stat(area_id):
     std = [np.std(im_mean[i]) for i in range(3)]
     return np.stack([np.array(mean), np.array(std)])
 
-def get_md_model(datapaths, data, bs, device_ids, num_workers, model_name='unet', global_dataset=False):
+def get_md_model(datapaths, data, bs, device_ids, num_workers, model_name='unet', global_dataset=False, num_slice=9, sz=192):
 #     (trn_x, trn_y), (val_x, val_y) = trn, val
     if global_dataset:
         global trn_x,trn_y, val_x,val_y
@@ -311,7 +323,7 @@ def get_md_model(datapaths, data, bs, device_ids, num_workers, model_name='unet'
     (trn_x,trn_y), (val_x,val_y) = data
     dataset = PublicArrayDataset if global_dataset else ArraysSingleDataset
     trn, val = ((True, True), (True, True)) if global_dataset else ((trn_x,trn_y), (val_x,val_y))
-    datasets = ImageData.get_ds(dataset, trn, val, tfms)
+    datasets = ImageData.get_ds(dataset, trn, val, tfms, num_slice=num_slice, sz=sz)
     md = ImageData('data', datasets, bs, num_workers=num_workers, classes=None)
     denorm = md.trn_ds.denorm
 
@@ -319,7 +331,7 @@ def get_md_model(datapaths, data, bs, device_ids, num_workers, model_name='unet'
         Path(MODEL_DIR).mkdir(parents=True)
 
     if model_name == 'deeplab':
-        model = deeplab_resnet.Res_Deeplab(2)
+        model = deeplab_resnet.Res_Deeplab(1) # change to 1
         cut_base = 1
     elif model_name == 'unet':
         model = UNet16(pretrained='vgg')
@@ -335,18 +347,21 @@ def get_md_model(datapaths, data, bs, device_ids, num_workers, model_name='unet'
 
 def expanded_loss(pred, target):
     return F.binary_cross_entropy_with_logits(pred[:,0], target)
-
+def mask_acc(pred,targ): return accuracy_multi(pred[:,0], targ, 0.)
 def get_learn(md, model):
     learn=ConvLearner(md, model)
     learn.opt_fn=optim.Adam
     learn.crit=crit
-    learn.metrics=[metrics]
+    learn.metrics=[mask_acc]
     return learn
     
-def learner_on_dataset(datapath, bs, device_ids, num_workers, model_name='unet', debug=False, data=None, global_dataset=False):
+def learner_on_dataset(datapath, bs, device_ids, num_workers, model_name='unet', debug=False,
+        data=None, global_dataset=False, num_slice=9, sz=192):
     if data is None:
         data = (trn_x,trn_y), (val_x,val_y) = get_dataset(datapath, debug=debug)
-    md, model, denorm = get_md_model([datapath], data, bs, device_ids, num_workers, model_name=model_name, global_dataset=global_dataset)
+    md, model, denorm = get_md_model([datapath], data, bs, device_ids,
+            num_workers, model_name=model_name, global_dataset=global_dataset,
+            num_slice=num_slice, sz=sz)
     print('Data finished loading:', datapath)
     learn = get_learn(md, model)
     return learn, denorm, data
@@ -377,39 +392,50 @@ def train_and_plot(learn, idx, fn, lrs, n_cycles, wds=[0.025/3, 0.025], use_wd_s
 def bool_pred(pred, thresh=0.5):
     return to_np(pred > thresh)
 
-
+def val_loss(preds, y, loss, thresh=None):
+    if thresh is not None:
+        preds = bool_pred(preds, thresh)
+    return loss(preds, y)
 
 def plot_worse_cross_entropy(tta, shift=0, n_ims=9, is_best=False, step=2):
     pass
 
-def plot_worse_iou(tta, shift=0, n_ims=9, is_best=False, step=2):
-    tta_exp = np.mean(np.exp(tta[0]), axis=0).squeeze()
-    ious = sep_iou(tta_exp, tta[1])
-    lowest_iou_idx = np.argsort(ious)
+def plot_ims(labels, data):
+    # data and labels should be zips
+    labels, data = list(labels), list(data)
+    n_ims = len(data)
+    cols = len(list(zip(*data)))
+    fig, ax = plt.subplots(n_ims, cols, figsize=(4*cols, 4*n_ims))
+    for i, row in enumerate(ax):
+        for j, col in enumerate(row):
+            col.imshow(data[i][j])
+            col.set_xlabel(labels[i][j])
+    fig.tight_layout()
+
+def plot_worse_preds(preds, y, learn, crit=jaccard_coef, shift=0, n_ims=9,
+        is_best=False, thresh=0.5, **kwargs):
+    scores = sep_parallel(crit, preds, y, **kwargs)
+    lowest_iou_idx = np.argsort(scores)
     if is_best:
         lowest_iou_idx = np.flip(lowest_iou_idx, 0)
-    
-    col = 4
-    plt.subplots(n_ims, 4, figsize=(16, 4 * n_ims))
-    for i in range(n_ims):
-        idx = i * step + shift
-        x, _ = learn.data.val_dl.get_batch([lowest_iou_idx[idx]])
-        plt.subplot(n_ims, col, i * col + 1)
-        plt.xlabel('rgb')
-        plt.imshow(denorm(x)[0])
+    lowest_iou_idx = lowest_iou_idx[shift: n_ims + shift]
 
-        plt.subplot(n_ims, col, i * col + 2)
-        plt.imshow(tta_exp[lowest_iou_idx[idx]])
-        plt.xlabel('Prediction: iou = ' + str(ious[lowest_iou_idx[idx]]))
-        
-        plt.subplot(n_ims, col, i * col + 3)
-        plt.imshow(bool_pred(tta_exp[lowest_iou_idx[idx]], 0.5))
-        plt.xlabel('bool_pred, arg ' + str(idx))
-
-        plt.subplot(n_ims, col, i * col + 4)
-        plt.imshow(tta[1][lowest_iou_idx[idx]])
-        plt.xlabel('GT')
-    plt.tight_layout()
+    x, _ = learn.data.val_dl.get_batch(lowest_iou_idx)
+    x = learn.data.val_ds.denorm(x).squeeze(); y = y.squeeze()
+    labels = [["x"] * n_ims, 
+        ["gt"] * n_ims,
+        scores[lowest_iou_idx],
+        ["preds"] * n_ims]
+    bp = bool_pred(preds, thresh=thresh)
+    xl, yl, predsl, bpl = [], [], [], []
+    for i in lowest_iou_idx:
+        xl.append(x[i])
+        yl.append(y[i])
+        predsl.append(preds[i])
+        bpl.append(bp[i])
+    data = zip(xl, yl, predsl, bpl)    
+    labels = zip(*labels)
+    plot_ims(labels, data)
 
 # sequential: if True, in one outer loop, every dataset is trained only once
 def train_on_full_dataset(epochs, lrs, wds, sequential=False, save_starter='full_dataset_beginner',\
