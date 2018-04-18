@@ -60,11 +60,11 @@ def pred_patches(model, sat_im, sat_patch_size, stride, batch, proc_method, map_
             i = 0
             
             if not proc_method == None:
-                yield map(lambda t: output_process(t, proc_method) ,model.predict(X))
+                yield map(lambda t: output_process(t, proc_method) ,model.predict_array(X))
             else:
-                yield model.predict_array(X) ### Use your interface
+                yield model.predict_array(np.moveaxis(X, -1, 1)).squeeze() ### Use your interface
 
-def pred_one_map(model, sat_im, sat_patch_size=192, map_patch_size=48, stride=24, batch=1, proc_method=None, resize = 1, func=None):
+def pred_one_map(model, sat_im, sat_patch_size=256, map_patch_size=256, stride=24, batch=1, proc_method=None, resize = 1, func=None):
     '''
     Predict one whole image 
     
@@ -77,7 +77,6 @@ def pred_one_map(model, sat_im, sat_patch_size=192, map_patch_size=48, stride=24
     if not resize == 1: sat_im = cv.resize(sat_im, None, fx=resize, fy=resize)
         
     gen = pred_patches(model, sat_im, sat_patch_size, stride, batch, proc_method, map_patch_size)
-
     Y = next(gen)
     i = 0
     sat_size = sat_patch_size
@@ -85,7 +84,6 @@ def pred_one_map(model, sat_im, sat_patch_size=192, map_patch_size=48, stride=24
     map_pred = np.zeros((sat_im.shape[0], sat_im.shape[1]), np.float32)
     map_pred_pad = np.pad(map_pred, ((h,h),(h,h)), 'reflect')
     map_pred_deg_pad = np.copy(map_pred_pad)
-    
     
     for y in range(0, map_pred_pad.shape[0] + stride, stride):
         for x in range(0, map_pred_pad.shape[1] + stride, stride):
@@ -100,8 +98,9 @@ def pred_one_map(model, sat_im, sat_patch_size=192, map_patch_size=48, stride=24
                 a = func(Y[i])
             else:
                 a = Y[i]
-            map_pred_pad[y + sat_patch_size // 2 - map_patch_size // 2:y + sat_patch_size // 2 + map_patch_size // 2,
-                    x + sat_patch_size // 2 - map_patch_size // 2: x + sat_patch_size // 2 + map_patch_size // 2] += a * gain
+            map_pred_pad[y+sat_patch_size//2-map_patch_size//2:y+sat_patch_size//2+map_patch_size//2,
+                    x+sat_patch_size//2-map_patch_size//2:x+sat_patch_size//2+map_patch_size//2]\
+                            += a * gain
             i += 1
             if i == batch:
                 i = 0
@@ -165,7 +164,7 @@ def fit_poly(pred_map, thd):
     for c in contours:
         app_c = cv.approxPolyDP(c,5,True)
         last_point = (app_c[0,0,0], app_c[0,0,1])
-        poly_im = cv.line(poly_im, last_point, (app_c[-1,0,0], app_c[-1,0,1]), (255,0,0), 2)
+        #poly_im = cv.line(poly_im, last_point, (app_c[-1,0,0], app_c[-1,0,1]), (255,0,0), 2)
         points = []
         for i, point in enumerate(app_c):
             ptr = (point[0,0],point[0,1])
@@ -214,8 +213,9 @@ def fill_poly(pred_map):
 
 def post_proc(img):
     '''Post processing'''
-    polys = fit_poly(img)
+    polys = fit_poly(img, 0.5)
     
+
     # Save polys to csv file...
     
     
@@ -227,7 +227,7 @@ def read_images(args):
     records = []
     for root, dirs, files in os.walk(img_dir):
         for file in files:
-            if file[-3:]=='jpg':
+            if file[-3:]=='png':
                 records.append(dict({'image': os.path.join(img_dir, file)})) 
     
     print('%d images found!'%len(records))
@@ -249,7 +249,7 @@ def pred_images(model, args):
         _, fn = os.path.split(sat_fn)
         map_fn = args.save_dir + fn[:-7] + 'mask.png'
         
-        h = 192                   # the size of small patch
+        h = 256                   # the size of small patch
 
         pred_map = pred_one_map(model, sat_im, sat_patch_size = h, stride=args.stride, batch=args.batch, proc_method=args.proc_method, resize=args.resize, map_patch_size=args.map_size)
         
@@ -259,7 +259,7 @@ def pred_images(model, args):
         
         pred_map = post_proc(pred_map)
         
-#         cv.imwrite(map_fn ,pred_map)
+        cv.imwrite(map_fn ,pred_map)
         print(i, map_fn)
         
         

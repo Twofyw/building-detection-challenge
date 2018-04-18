@@ -272,11 +272,12 @@ def jaccard_coef(y_pred, y_true=None, thresh=0.5):
         raise TypeError
         
     smooth = 1e-12
-    y_pred = to_np(y_pred) > thresh
-    y_true = to_np(y_true) > thresh
-    intersection = y_true * y_pred
-    sum_ = np.sum(y_true) + np.sum(y_pred)
+    y_pred = (to_np(y_pred) > thresh).astype('float')
+    y_true = (to_np(y_true) > thresh).astype('float')
+    intersection = np.sum(y_true * y_pred)
+    sum_ = np.sum(y_true + y_pred)
     jac = (intersection + smooth) / (sum_ - intersection + smooth)
+    print(sum_, intersection)
     return np.mean(jac)
 
 def sep_parallel(f, y_pred, y_true, num_workers=8, **kwargs):
@@ -350,7 +351,7 @@ def get_md_model(datapaths, data, bs, device_ids, num_workers, model_name='unet'
     return md, models, denorm
 
 def expanded_loss(pred, target):
-    return F.binary_cross_entropy_with_logists(pred[:,0], target)
+    return F.binary_cross_entropy(pred[:,0], target)
 def mask_acc(pred,targ): return accuracy_multi(pred[:,0], targ, 0.)
 def get_learn(md, model):
     learn=ConvLearner(md, model)
@@ -404,7 +405,7 @@ def val_loss(preds, y, loss, thresh=None):
 def plot_worse_cross_entropy(tta, shift=0, n_ims=9, is_best=False, step=2):
     pass
 
-def plot_ims(data, labels=None):
+def plot_ims(data, labels=None, figsize=3):
     # data and labels should be zips
     data = list(data)
     n_ims = len(data)
@@ -413,7 +414,7 @@ def plot_ims(data, labels=None):
         labels = list(labels)
     else:
         labels = np.zeros((n_ims, cols))
-    fig, ax = plt.subplots(n_ims, cols, figsize=(3*cols, 3*n_ims))
+    fig, ax = plt.subplots(n_ims, cols, figsize=(figsize*cols, figsize*n_ims))
     for i, row in enumerate(ax):
         if len(ax.shape) == 1:
             row.imshow(data[0][i])
@@ -432,7 +433,8 @@ def plot_worse_preds(x, y, preds, learn, crit=jaccard_coef, scores=None, shift=0
     if is_best:
         lowest_iou_idx = np.flip(lowest_iou_idx, 0)
     lowest_iou_idx = lowest_iou_idx[shift: n_ims + shift]
-    labels = [["x"] * n_ims, 
+    print(scores[lowest_iou_idx])
+    labels = [lowest_iou_idx,
         ["gt"] * n_ims,
         scores[lowest_iou_idx],
         ["preds"] * n_ims]
@@ -446,7 +448,7 @@ def plot_worse_preds(x, y, preds, learn, crit=jaccard_coef, scores=None, shift=0
     data = zip(xl, yl, predsl, bpl)    
     labels = zip(*labels)
     plot_ims(data, labels=labels)
-    return scores
+    return scores, lowest_iou_idx
 
 # sequential: if True, in one outer loop, every dataset is trained only once
 def train_on_full_dataset(epochs, lrs, wds, sequential=False, save_starter='full_dataset_beginner',\
