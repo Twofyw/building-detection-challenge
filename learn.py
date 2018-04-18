@@ -350,7 +350,7 @@ def get_md_model(datapaths, data, bs, device_ids, num_workers, model_name='unet'
     return md, models, denorm
 
 def expanded_loss(pred, target):
-    return F.binary_cross_entropy_with_logits(pred[:,0], target)
+    return F.binary_cross_entropy(pred[:,0], target)
 def mask_acc(pred,targ): return accuracy_multi(pred[:,0], targ, 0.)
 def get_learn(md, model):
     learn=ConvLearner(md, model)
@@ -384,7 +384,7 @@ def plot_lr_loss(learn, save_name=None):
     ax[1].set_xlabel('lr')
     if save_name is not None:
         save_path = Path('data/figs')
-        if not save_path.exists(): save_path.mkdir(parent=True)
+        if not save_path.exists(): save_path.mkdir(parents=True)
         fig.savefig(str(save_path / Path(save_name)) + '.png')
 
 def train_and_plot(learn, idx, fn, lrs, n_cycles, wds=[0.025/3, 0.025], use_wd_sched=False, **kwargs):
@@ -404,16 +404,24 @@ def val_loss(preds, y, loss, thresh=None):
 def plot_worse_cross_entropy(tta, shift=0, n_ims=9, is_best=False, step=2):
     pass
 
-def plot_ims(labels, data):
+def plot_ims(data, labels=None):
     # data and labels should be zips
-    labels, data = list(labels), list(data)
+    data = list(data)
     n_ims = len(data)
     cols = len(list(zip(*data)))
+    if labels is not None:
+        labels = list(labels)
+    else:
+        labels = np.zeros((n_ims, cols))
     fig, ax = plt.subplots(n_ims, cols, figsize=(3*cols, 3*n_ims))
     for i, row in enumerate(ax):
-        for j, col in enumerate(row):
-            col.imshow(data[i][j])
-            col.set_xlabel(labels[i][j])
+        if len(ax.shape) == 1:
+            row.imshow(data[0][i])
+            row.set_xlabel(labels[0][i])
+        else:
+            for j, col in enumerate(row):
+                col.imshow(data[i][j])
+                col.set_xlabel(labels[i][j])
     fig.tight_layout()
 
 def plot_worse_preds(x, y, preds, learn, crit=jaccard_coef, scores=None, shift=0, n_ims=9,
@@ -437,7 +445,7 @@ def plot_worse_preds(x, y, preds, learn, crit=jaccard_coef, scores=None, shift=0
         bpl.append(bp[i])
     data = zip(xl, yl, predsl, bpl)    
     labels = zip(*labels)
-    plot_ims(labels, data)
+    plot_ims(data, labels=labels)
     return scores
 
 # sequential: if True, in one outer loop, every dataset is trained only once
