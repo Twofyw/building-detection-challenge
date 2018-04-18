@@ -4,3 +4,4 @@ __pycache__
 u-net-release
 models
 data_train.pickle
+*~

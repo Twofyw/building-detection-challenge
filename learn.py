@@ -272,10 +272,10 @@ def jaccard_coef(y_pred, y_true=None, thresh=0.5):
         raise TypeError
         
     smooth = 1e-12
-    y_pred = to_np(y_pred) > thresh
-    y_true = to_np(y_true) > thresh
-    intersection = y_true * y_pred
-    sum_ = np.sum(y_true) + np.sum(y_pred)
+    y_pred = (to_np(y_pred) > thresh).astype('float')
+    y_true = (to_np(y_true) > thresh).astype('float')
+    intersection = np.sum(y_true * y_pred)
+    sum_ = np.sum(y_true + y_pred)
     jac = (intersection + smooth) / (sum_ - intersection + smooth)
     return np.mean(jac)
 
@@ -404,7 +404,7 @@ def val_loss(preds, y, loss, thresh=None):
 def plot_worse_cross_entropy(tta, shift=0, n_ims=9, is_best=False, step=2):
     pass
 
-def plot_ims(data, labels=None):
+def plot_ims(data, labels=None, figsize=3):
     # data and labels should be zips
     data = list(data)
     n_ims = len(data)
@@ -413,7 +413,7 @@ def plot_ims(data, labels=None):
         labels = list(labels)
     else:
         labels = np.zeros((n_ims, cols))
-    fig, ax = plt.subplots(n_ims, cols, figsize=(3*cols, 3*n_ims))
+    fig, ax = plt.subplots(n_ims, cols, figsize=(figsize*cols, figsize*n_ims))
     for i, row in enumerate(ax):
         if len(ax.shape) == 1:
             row.imshow(data[0][i])
@@ -432,7 +432,8 @@ def plot_worse_preds(x, y, preds, learn, crit=jaccard_coef, scores=None, shift=0
     if is_best:
         lowest_iou_idx = np.flip(lowest_iou_idx, 0)
     lowest_iou_idx = lowest_iou_idx[shift: n_ims + shift]
-    labels = [["x"] * n_ims, 
+    print(scores[lowest_iou_idx])
+    labels = [lowest_iou_idx,
         ["gt"] * n_ims,
         scores[lowest_iou_idx],
         ["preds"] * n_ims]
