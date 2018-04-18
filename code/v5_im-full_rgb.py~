@@ -325,7 +325,7 @@ def prep_rgb_image_store_train(area_id, datapath, is_valtrain=True):
 
     logger.info("Image store file: {}".format(fn_store))
     
-    pool = mp.Pool(processes=16)
+    pool = mp.Pool(processes=8)
     ims = pool.map(functools.partial(get_resized_3chan_image_test, datapath=datapath, bandstats=bandstats), df_list.index)
 
     for i, im in enumerate(ims):
@@ -832,12 +832,12 @@ def preproc_test(datapath):
         logger.info("Generate IMAGELIST for inference")
         prep_test_imagelist(area_id, datapath)
 
-    # # Image HDF5 store (RGB)
-    # if Path(FMT_TEST_IM_STORE.format(prefix)).exists():
-    #     logger.info("Generate RGB_STORE (test) ... skip")
-    # else:
-    #     logger.info("Generate RGB_STORE (test)")
-    #     prep_rgb_image_store_test(area_id, datapath)
+    # Image HDF5 store (RGB)
+    if Path(FMT_TEST_IM_STORE.format(prefix)).exists():
+        logger.info("Generate RGB_STORE (test) ... skip")
+    else:
+        logger.info("Generate RGB_STORE (test)")
+        prep_rgb_image_store_test(area_id, datapath)
     #
     # # Image HDF5 store (MUL)
     # if Path(FMT_TEST_MUL_STORE.format(prefix)).exists():

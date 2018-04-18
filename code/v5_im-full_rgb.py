@@ -76,7 +76,7 @@ FMT_IMMEAN = IMAGE_DIR + "/{}_immean.h5"
 FMT_MULMEAN = IMAGE_DIR + "/{}_mulmean.h5"
 
 FMT_TEST_IMAGELIST_PATH = IMAGE_DIR + "/{prefix:s}_test_ImageId.csv"
-FMT_TEST_IM_STORE = IMAGE_DIR + "/test_{}_im.h5"
+FMT_TEST_IM_STORE = IMAGE_DIR + "/test_full_rgb/"
 FMT_TEST_MUL_STORE = IMAGE_DIR + "/test_{}_mul.h5"
 
 # Logger
@@ -337,19 +337,22 @@ def prep_rgb_image_store_test(area_id, datapath):
 
     logger.info("prep_rgb_image_store_test for {}".format(prefix))
     fn_list = FMT_TEST_IMAGELIST_PATH.format(prefix=prefix)
-    fn_store = FMT_TEST_IM_STORE.format(prefix)
+    fn_store = FMT_TEST_IM_STORE
     df_list = pd.read_csv(fn_list, index_col='ImageId')
 
     logger.info("Image store file: {}".format(fn_store))
-    with tb.open_file(fn_store, 'w') as f:
-        for image_id in tqdm.tqdm(df_list.index, total=len(df_list)):
-            im = get_resized_3chan_image_test(image_id, datapath, bandstats)
-            atom = tb.Atom.from_dtype(im.dtype)
-            filters = tb.Filters(complib='blosc', complevel=9)
-            ds = f.create_carray(f.root, image_id, atom, im.shape,
-                                 filters=filters)
-            ds[:] = im
-
+   #with tb.open_file(fn_store, 'w') as f:
+   #     for image_id in tqdm.tqdm(df_list.index, total=len(df_list)):
+   #         im = get_resized_3chan_image_test(image_id, datapath, bandstats)
+   #         atom = tb.Atom.from_dtype(im.dtype)
+   #         filters = tb.Filters(complib='blosc', complevel=9)
+   #         ds = f.create_carray(f.root, image_id, atom, im.shape,
+   #                              filters=filters)
+   #         ds[:] = im
+    pool = mp.Pool(processes=8)
+    ims = pool.map(functools.partial(get_resized_3chan_image_test, datapath=datapath, bandstats=bandstats), df_list.index)
+    for i, im in enumerate(ims):
+        plt.imsave(fn_store + df_list.index[i] + '.png', im)
 
 def get_resized_3chan_image_train(image_id, datapath, bandstats):
     fn = get_train_image_path_from_imageid(image_id, datapath)
@@ -832,12 +835,12 @@ def preproc_test(datapath):
         logger.info("Generate IMAGELIST for inference")
         prep_test_imagelist(area_id, datapath)
 
-    # # Image HDF5 store (RGB)
-    # if Path(FMT_TEST_IM_STORE.format(prefix)).exists():
-    #     logger.info("Generate RGB_STORE (test) ... skip")
-    # else:
-    #     logger.info("Generate RGB_STORE (test)")
-    #     prep_rgb_image_store_test(area_id, datapath)
+    # Image HDF5 store (RGB)
+    if Path(FMT_TEST_IM_STORE.format(prefix)).exists():
+        logger.info("Generate RGB_STORE (test) ... skip")
+    else:
+        logger.info("Generate RGB_STORE (test)")
+        prep_rgb_image_store_test(area_id, datapath)
     #
     # # Image HDF5 store (MUL)
     # if Path(FMT_TEST_MUL_STORE.format(prefix)).exists():
