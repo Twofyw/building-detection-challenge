@@ -8,6 +8,7 @@ import multiprocessing as mp
 import sys
 sys.path.insert(0, 'code')
 from models import *
+from v17 import *
 from v13_deeplab import *
 import torch
 import torch.nn as nn
