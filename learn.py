@@ -446,7 +446,7 @@ def plot_worse_preds(x, y, preds, learn, crit=jaccard_coef, scores=None, shift=0
     data = zip(xl, yl, predsl, bpl)    
     labels = zip(*labels)
     plot_ims(data, labels=labels)
-    return scores
+    return scores, lowest_iou_idx
 
 # sequential: if True, in one outer loop, every dataset is trained only once
 def train_on_full_dataset(epochs, lrs, wds, sequential=False, save_starter='full_dataset_beginner',\
