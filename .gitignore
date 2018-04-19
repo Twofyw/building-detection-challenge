@@ -5,3 +5,4 @@ u-net-release
 models
 data_train.pickle
 *~
+*.swp

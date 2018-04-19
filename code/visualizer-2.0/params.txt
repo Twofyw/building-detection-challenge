@@ -1,0 +1,18 @@
+# Empty lines and comments like this are ignored.
+# Use 'key = value' format, or simply 'key' for marker params like 'no-gui'.
+# 'key' and '-key' are treated as identical.
+# The 'truth' and 'image-dir' params are special, they can have multiple
+# values assigned, all of them will be used.
+
+band-triplets = ./data/band-triplets.txt
+solution = ./data/solution-sample.csv
+
+truth = ./data/AOI_2_Vegas_Train/summaryData/AOI_2_Vegas_Train_Building_Solutions.csv
+truth = ./data/AOI_3_Paris_Train/summaryData/AOI_3_Paris_Train_Building_Solutions.csv
+truth = ./data/AOI_4_Shanghai_Train/summaryData/AOI_4_Shanghai_Train_Building_Solutions.csv
+truth = ./data/AOI_5_Khartoum_Train/summaryData/AOI_5_Khartoum_Train_Building_Solutions.csv
+
+image-dir = ./data/AOI_2_Vegas_Train
+image-dir = ./data/AOI_3_Paris_Train
+image-dir = ./data/AOI_4_Shanghai_Train
+image-dir = ./data/AOI_5_Khartoum_Train

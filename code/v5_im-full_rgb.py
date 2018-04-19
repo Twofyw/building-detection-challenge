@@ -76,7 +76,7 @@ FMT_IMMEAN = IMAGE_DIR + "/{}_immean.h5"
 FMT_MULMEAN = IMAGE_DIR + "/{}_mulmean.h5"
 
 FMT_TEST_IMAGELIST_PATH = IMAGE_DIR + "/{prefix:s}_test_ImageId.csv"
-FMT_TEST_IM_STORE = IMAGE_DIR + "/test_full_rgb/"
+FMT_TEST_IM_STORE = IMAGE_DIR + "/pred_full_rgb/"
 FMT_TEST_MUL_STORE = IMAGE_DIR + "/test_{}_mul.h5"
 
 # Logger
@@ -836,7 +836,7 @@ def preproc_test(datapath):
         prep_test_imagelist(area_id, datapath)
 
     # Image HDF5 store (RGB)
-    if Path(FMT_TEST_IM_STORE.format(prefix)).exists():
+    if False:
         logger.info("Generate RGB_STORE (test) ... skip")
     else:
         logger.info("Generate RGB_STORE (test)")
