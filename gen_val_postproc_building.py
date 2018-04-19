@@ -29,7 +29,7 @@ def get_patch(sat_im, sat_size, stride, map_patch_size):
     stride - the stride between two patches
     map_patch_size - useless for building
     '''
-    h = sat_size 
+    h = sat_size / 20 # too big so divide by 20
     sat_im_pad = np.pad(sat_im, ((h,h),(h,h),(0,0)), 'reflect')
     
     for y in range(0, sat_im_pad.shape[0] + stride, stride):
@@ -51,7 +51,7 @@ def pred_patches(model, sat_im, sat_patch_size, stride, batch, proc_method, map_
     proc_method - some function to process the prediction
     
     '''
-    X = np.zeros((batch, sat_patch_size, sat_patch_size, 3), np.float32)
+    X = np.empty((batch, sat_patch_size, sat_patch_size, 3), np.float32)
     i = 0
     for patch, x, y in get_patch(sat_im, sat_patch_size, stride, map_patch_size):
         X[i] = patch
@@ -163,7 +163,7 @@ def fit_poly(pred_map, thd):
     polys = []
     for c in contours:
         app_c = cv.approxPolyDP(c,5,True)
-        last_point = (app_c[0,0,0], app_c[0,0,1])
+        #last_point = (app_c[0,0,0], app_c[0,0,1])
         #poly_im = cv.line(poly_im, last_point, (app_c[-1,0,0], app_c[-1,0,1]), (255,0,0), 2)
         points = []
         for i, point in enumerate(app_c):

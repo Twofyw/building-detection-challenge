@@ -28,7 +28,7 @@ INPUT_SIZE = 256
 STRIDE_SZ = 197
 
 LOGFORMAT = '%(asctime)s %(levelname)s %(message)s'
-BASE_DIR = "/data/train"
+BASE_DIR = "data/train"
 
 # Parameters
 MIN_POLYGON_AREA = 30
@@ -41,12 +41,12 @@ FMT_TRAIN_SUMMARY_PATH = str(
 
 # ---------------------------------------------------------
 # Image list, Image container and mask container
-V5_IMAGE_DIR = "/data/working/images/{}".format('v5')
+V5_IMAGE_DIR = "data/working/images/{}".format('v5')
 FMT_VALTEST_IMAGELIST_PATH = V5_IMAGE_DIR + "/{prefix:s}_valtest_ImageId.csv"
 FMT_TEST_IMAGELIST_PATH = V5_IMAGE_DIR + "/{prefix:s}_test_ImageId.csv"
 
 # Model files
-MODEL_DIR = "/data/working/models/{}".format(MODEL_NAME)
+MODEL_DIR = "data/working/models/{}".format(MODEL_NAME)
 FMT_VALTESTPRED_PATH = MODEL_DIR + "/{}_eval_pred.h5"
 FMT_VALTESTPOLY_PATH = MODEL_DIR + "/{}_eval_poly.csv"
 FMT_VALTESTTRUTH_PATH = MODEL_DIR + "/{}_eval_poly_truth.csv"
@@ -57,7 +57,7 @@ FMT_VALMODEL_EVALTHHIST = MODEL_DIR + "/{}_val_evalhist_th.csv"
 # ---------------------------------------------------------
 # Prediction & polygon result
 FMT_TESTPOLY_PATH = MODEL_DIR + "/{}_poly.csv"
-FN_SOLUTION_CSV = "/data/{}.csv".format(MODEL_NAME)
+FN_SOLUTION_CSV = "data/{}.csv".format(MODEL_NAME)
 
 # Logger
 warnings.simplefilter("ignore", UserWarning)
@@ -157,14 +157,14 @@ def _calc_fscore_per_aoi(area_id):
     cmd = [
         'java',
         '-jar',
-        '/root/visualizer-2.0/visualizer.jar',
+        'code/visualizer-2.0/visualizer.jar',
         '-truth',
         truth_file,
         '-solution',
         poly_file,
         '-no-gui',
         '-band-triplets',
-        '/root/visualizer-2.0/data/band-triplets.txt',
+        'code/visualizer-2.0/data/band-triplets.txt',
         '-image-dir',
         'pass',
     ]
@@ -174,6 +174,7 @@ def _calc_fscore_per_aoi(area_id):
         stderr=subprocess.PIPE,
     )
     stdout_data, stderr_data = proc.communicate()
+    #print(stdout_data)
     lines = [line for line in stdout_data.decode('utf8').split('\n')[-10:]]
 
     # Expected lines:
@@ -240,7 +241,8 @@ def extract_y_pred(mod, area_id):
 
 def _internal_test_predict_best_param(area_id,
                                       rescale_pred_list=[],
-                                      slice_pred_list=[]):
+                                      slice_pred_list=[],
+                                      num_slice=9):
     prefix = area_id_to_prefix(area_id)
 
     # Load test imagelist
@@ -251,11 +253,11 @@ def _internal_test_predict_best_param(area_id,
     for idx, image_id in enumerate(df_test.index.tolist()):
         pred_values = np.zeros((650, 650))
         pred_count = np.zeros((650, 650))
-        for slice_pos in range(9):
-            slice_idx = idx * 9 + slice_pos
+        for slice_pos in range(num_slice):
+            slice_idx = idx * num_slice + slice_pos
 
-            pos_j = int(math.floor(slice_pos / 3.0))
-            pos_i = int(slice_pos % 3)
+            pos_j = int(math.floor(slice_pos / math.sqrt(num_slice)))
+            pos_i = int(slice_pos % math.sqrt(num_slice))
             x0 = STRIDE_SZ * pos_i
             y0 = STRIDE_SZ * pos_j
 
@@ -297,12 +299,12 @@ def _internal_validate_predict_best_param(area_id,
 
             pos_j = int(math.floor(slice_pos / 3.0))
             pos_i = int(slice_pos % 3)
-            x0 = STRIDE_SZ * pos_i
-            y0 = STRIDE_SZ * pos_j
+            x0 = STRIDE_SZ * pos_j
+            y0 = STRIDE_SZ * pos_i
 
             for slice_pred in slice_pred_list:
                 pred_values[x0:x0+INPUT_SIZE, y0:y0+INPUT_SIZE] += (
-                    slice_pred[slice_idx][0])
+                    slice_pred[slice_idx])
                 pred_count[x0:x0+INPUT_SIZE, y0:y0+INPUT_SIZE] += 1
 
         for rescale_pred in rescale_pred_list:
@@ -398,7 +400,7 @@ def _internal_pred_to_poly_file(area_id,
     df_true = pd.read_csv(fn_true)
 
     # # Remove prefix "PAN_"
-    # df_true.loc[:, 'ImageId'] = df_true.ImageId.str[4:]
+    #df_true.loc[:, 'ImageId'] = df_true.ImageId.str[4:]
 
     fn_valtest = FMT_VALTEST_IMAGELIST_PATH.format(prefix=prefix)
     df_valtest = pd.read_csv(fn_valtest)
@@ -525,7 +527,7 @@ def testmerge(testonly):
 
 @cli.command()
 @click.argument('datapath', type=str)
-def testproc(datapath):
+def testproc(datapath, y_pred):
     area_id = directory_name_to_area_id(datapath)
     prefix = area_id_to_prefix(area_id)
     logger.info(">>>> Test proc for {}".format(prefix))
@@ -536,23 +538,30 @@ def testproc(datapath):
     v16 = importlib.import_module('v16')
 
     # Predict first
-    logger.info("Prediction phase (v9s)")
-    y_pred_0 = v9s._internal_test_predict_best_param(
-        area_id, save_pred=False)
-    logger.info("Prediction phase (v13)")
-    y_pred_1 = v13._internal_test_predict_best_param(
-        area_id, save_pred=False)
-    logger.info("Prediction phase (v16)")
-    y_pred_2 = v16._internal_test_predict_best_param(
-        area_id, save_pred=False)
+   # logger.info("Prediction phase (v9s)")
+   # y_pred_0 = v9s._internal_test_predict_best_param(
+   #     area_id, save_pred=False)
+   # logger.info("Prediction phase (v13)")
+   # y_pred_1 = v13._internal_test_predict_best_param(
+   #     area_id, save_pred=False)
+   # logger.info("Prediction phase (v16)")
+   # y_pred_2 = v16._internal_test_predict_best_param(
+   #     area_id, save_pred=False)
 
+   # # Ensemble
+   # logger.info("Averaging")
+   # y_pred = _internal_test_predict_best_param(
+   #     area_id,
+   #     rescale_pred_list=[y_pred_0],
+   #     slice_pred_list=[y_pred_1, y_pred_2],)
     # Ensemble
     logger.info("Averaging")
     y_pred = _internal_test_predict_best_param(
         area_id,
-        rescale_pred_list=[y_pred_0],
-        slice_pred_list=[y_pred_1, y_pred_2],
+        rescale_pred_list=[],
+        slice_pred_list=[y_pred],
     )
+     
 
     # pred to polygon
     param = get_model_parameter(area_id)
@@ -564,33 +573,34 @@ def testproc(datapath):
     logger.info(">>>> Test proc for {} ... done".format(prefix))
 
 
-@cli.command()
-@click.argument('datapath', type=str)
-def evalfscore(datapath):
+#@cli.command()
+#@click.argument('datapath', type=str)
+def evalfscore(datapath, y_pred):
     area_id = directory_name_to_area_id(datapath)
     prefix = area_id_to_prefix(area_id)
     logger.info("Evaluate fscore on validation set: {}".format(prefix))
 
     logger.info("import modules")
-    v9s = importlib.import_module('v9s')
-    v13 = importlib.import_module('v13')
-    v16 = importlib.import_module('v16')
+   # v9s = importlib.import_module('v9s')
+   # v13 = importlib.import_module('v13')
+   # v16 = importlib.import_module('v16')
 
     # Predict first
     logger.info("Prediction phase")
-    y_pred_0 = v9s._internal_validate_predict_best_param(
-        area_id, enable_tqdm=True)
-    y_pred_1 = v13._internal_validate_predict_best_param(
-        area_id, enable_tqdm=True)
-    y_pred_2 = v16._internal_validate_predict_best_param(
-        area_id, enable_tqdm=True)
+   # y_pred_0 = v9s._internal_validate_predict_best_param(
+   #     area_id, enable_tqdm=True)
+   # y_pred_1 = v13._internal_validate_predict_best_param(
+   #     area_id, enable_tqdm=True)
+   # y_pred_2 = v16._internal_validate_predict_best_param(
+   #     area_id, enable_tqdm=True)
 
     logger.info("Averaging")
     y_pred = _internal_validate_predict_best_param(
         area_id,
-        rescale_pred_list=[y_pred_0],
-        slice_pred_list=[y_pred_1, y_pred_2],
+        rescale_pred_list=[],
+        slice_pred_list=[y_pred],
     )
+    print(y_pred.shape)
 
     # Make parent directory
     fn_out = FMT_VALTESTPOLY_PATH.format(prefix)

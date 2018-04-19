@@ -27,12 +27,6 @@ num_slice = 9
 STRIDE_SZ = 197
 PATH = 'data/'
 
-#_num_gpus, _gpu_start, _num_workers, _device_ids, _bs = None, None, None, None, None
-#_debug = None
-#learn, denorm = None, None
-#(trn_x,trn_y), (val_x,val_y) = (None, None), (None, None)
-#last_datapath = None
-
 BASE_DIR = "data/train"
 BASE_TEST_DIR = "data/test"
 WORKING_DIR = "data/working"
@@ -95,7 +89,7 @@ FMT_VALTEST_MUL_STORE = V5_IMAGE_DIR + "/valtest_{}_mul.h5"
 FMT_TRAIN_IMAGELIST_PATH = V5_IMAGE_DIR + "/{prefix:s}_train_ImageId.csv"
 FMT_TEST_IMAGELIST_PATH = V5_IMAGE_DIR + "/{prefix:s}_test_ImageId.csv"
 FMT_TRAIN_IM_STORE = IMAGE_DIR + "/train_{}_im.h5"
-FMT_TEST_IM_STORE = IMAGE_DIR + "/test_{}_im.h5"
+FMT_TEST_IM_STORE = V5_IMAGE_DIR + "/pred_full_rgb/"
 FMT_TRAIN_MASK_STORE = IMAGE_DIR + "/train_{}_mask.h5"
 FMT_TRAIN_MUL_STORE = IMAGE_DIR + "/train_{}_mul.h5"
 FMT_TEST_MUL_STORE = IMAGE_DIR + "/test_{}_mul.h5"
@@ -130,10 +124,12 @@ FMT_FULLMODEL_LAST_PATH = MODEL_DIR + "/{}_full_weights_last.h5"
 datapaths = ['data/train/AOI_3_Paris_Train', 'data/train/AOI_2_Vegas_Train', 'data/train/AOI_4_Shanghai_Train', 'data/train/AOI_5_Khartoum_Train']
 ################################################################
 
-def get_data(area_id, is_test, max_workers=3, debug=False):
+def get_data(area_id, is_test, max_workers=3, debug=False, is_pred=False):
     prefix = area_id_to_prefix(area_id)
     fn_train = FMT_VALTEST_IMAGELIST_PATH.format(prefix=prefix) if is_test\
 	else FMT_VALTRAIN_IMAGELIST_PATH.format(prefix=prefix)
+    fn_train = FMT_TEST_IMAGELIST_PATH.format(prefix=prefix) if is_pred\
+            else fn_train
     df_train = pd.read_csv(fn_train)
     
     fn_im = FMT_VALTEST_MASK_STORE.format(prefix) if is_test\
@@ -142,14 +138,17 @@ def get_data(area_id, is_test, max_workers=3, debug=False):
         slice_n = 50
     else:
         slice_n = None
-    y_val = np.empty((slice_n if debug else df_train.shape[0], ORIGINAL_SIZE, ORIGINAL_SIZE, 1))
-    with tb.open_file(fn_im, 'r') as f:                                         
-        for i, image_id in tqdm.tqdm_notebook(enumerate(df_train.ImageId.tolist()[:slice_n]),\
-		total=df_train.shape[0], desc='ims'):
-            fn = '/' + image_id
-            y_val[i] = np.array(f.get_node(fn))[..., None]
+    if not is_pred:
+        y_val = np.empty((slice_n if debug else df_train.shape[0], ORIGINAL_SIZE, ORIGINAL_SIZE, 1))
+        with tb.open_file(fn_im, 'r') as f:                                         
+            for i, image_id in tqdm.tqdm_notebook(enumerate(df_train.ImageId.tolist()[:slice_n]),\
+                    total=df_train.shape[0], desc='ims'):
+                fn = '/' + image_id
+                y_val[i] = np.array(f.get_node(fn))[..., None]
             
+
     fn_im = FMT_VALTEST_IM_FOLDER if is_test else FMT_VALTRAIN_IM_FOLDER
+    fn_im = FMT_TEST_IM_STORE if is_pred else fn_im
     X_val = np.empty((slice_n if debug else df_train.shape[0], ORIGINAL_SIZE, ORIGINAL_SIZE, 3))
     if max_workers == 1:
         for i, image_id in tqdm.tqdm_notebook(enumerate(df_train.ImageId.tolist()[:slice_n]),\
@@ -163,16 +162,23 @@ def get_data(area_id, is_test, max_workers=3, debug=False):
                 X_val[i] = im[...,:3]
 #         im = np.moveaxis(im, -1, 0)
 
-    X_val, y_val = X_val.astype('float'), y_val.astype('float')
+    X_val= X_val.astype('float')
+    if is_pred:
+        y_val = None
+    else:
+        y_val = y_val.astype('float')
     return X_val, y_val
 
-def get_dataset(datapath, debug=False):
+def get_dataset(datapath, debug=False, is_pred=False):
     area_id = directory_name_to_area_id(datapath)
     prefix = area_id_to_prefix(area_id)
-    trn_x, trn_y = get_data(area_id, False, debug=debug)
-    trn_y = np.broadcast_to(trn_y, [trn_y.shape[0], ORIGINAL_SIZE, ORIGINAL_SIZE, 3])
-    val_x, val_y = get_data(area_id, True, debug=debug)
+    val_x, val_y = get_data(area_id, True, debug=debug, is_pred=is_pred)
     val_y = np.broadcast_to(val_y, [val_y.shape[0], ORIGINAL_SIZE, ORIGINAL_SIZE, 3])
+    if not is_pred:
+        trn_x, trn_y = get_data(area_id, False, debug=debug)
+        trn_y = np.broadcast_to(trn_y, [trn_y.shape[0], ORIGINAL_SIZE, ORIGINAL_SIZE, 3])
+    else:
+        trn_x, trn_y = val_x, val_y
     return (trn_x,trn_y), (val_x,val_y)
 
 class ArraysSingleDataset(BaseDataset):
@@ -191,9 +197,9 @@ class ArraysSingleDataset(BaseDataset):
             im = self.x[i//self.num_slice]
         slice_pos = i % self.num_slice
         a = np.sqrt(self.num_slice)
-        cut_i = slice_pos // a
-        cut_j = slice_pos % a
-        stride = (self.sz_i - self.sz) // a
+        cut_j = slice_pos // a
+        cut_i = slice_pos % a
+        stride = (self.sz_i - self.sz) // (a - 1)
         cut_x = int(cut_j * stride)
         cut_y = int(cut_i * stride)
         return im[cut_x:cut_x + self.sz, cut_y:cut_y + self.sz]
@@ -224,9 +230,9 @@ class PublicArrayDataset(BaseDataset):
             im = trn_x[i//self.num_slice] if self.is_trn else val_x[i//self.num_slice]
         slice_pos = i % self.num_slice
         a = np.sqrt(self.num_slice)
-        cut_i = slice_pos // a
-        cut_j = slice_pos % a
-        stride = (self.sz_i - self.sz) // a
+        cut_j = slice_pos // a
+        cut_i = slice_pos % a
+        stride = (self.sz_i - self.sz) // (a - 1)
         cut_x = int(cut_j * stride)
         cut_y = int(cut_i * stride)
         return im[cut_x:cut_x + self.sz, cut_y:cut_y + self.sz]
@@ -257,10 +263,10 @@ def sep_iou(y_pred, y_true, thresh=0.5):
     
 ## cuda version
 def jaccard_coef_cuda(y_pred, y_true, thresh=0.5):
-    smooth = T(1e-12)
+    smooth = V(1e-12)
     y_pred = (y_pred > thresh).float()
     y_true = (y_true > thresh).float()
-    intersection = y_true * y_pred
+    intersection = torch.sum(y_true * y_pred)
     sum_ = torch.sum(y_true + y_pred)
     jac = (intersection + smooth) / (sum_ - intersection + smooth)
     return torch.mean(jac)
@@ -324,7 +330,7 @@ def get_md_model(datapaths, data, bs, device_ids, num_workers, model_name='unet'
     
     (trn_x,trn_y), (val_x,val_y) = data
     dataset = PublicArrayDataset if global_dataset else ArraysSingleDataset
-    trn, val = ((True, True), (True, True)) if global_dataset else ((trn_x,trn_y), (val_x,val_y))
+    trn, val = ((True, True), (False, False)) if global_dataset else ((trn_x,trn_y), (val_x,val_y))
     datasets = ImageData.get_ds(dataset, trn, val, tfms, num_slice=num_slice, sz=sz)
     md = ImageData('data', datasets, bs, num_workers=num_workers, classes=None)
     denorm = md.trn_ds.denorm
@@ -361,9 +367,10 @@ def get_learn(md, model):
     return learn
     
 def learner_on_dataset(datapath, bs, device_ids, num_workers, model_name='unet', debug=False,
-        data=None, global_dataset=False, num_slice=9, sz=192):
+        data=None, global_dataset=False, num_slice=9, sz=192, is_pred=False):
     if data is None:
-        data = (trn_x,trn_y), (val_x,val_y) = get_dataset(datapath, debug=debug)
+        data = (trn_x,trn_y), (val_x,val_y) = get_dataset(datapath, debug=debug,
+                is_pred=is_pred)
     md, model, denorm = get_md_model([datapath], data, bs, device_ids,
             num_workers, model_name=model_name, global_dataset=global_dataset,
             num_slice=num_slice, sz=sz)
@@ -488,58 +495,47 @@ def train_on_full_dataset(epochs, lrs, wds, sequential=False, save_starter='full
 crit = expanded_loss
 metrics = jaccard_coef_parallel
 
-docstr = """
-Usage:
-    learn.py [options]
-
-Options:
-    -h, --help                  Print this message
-    
-    Read code for more.
-"""
-if __name__ == '__main__':
-    args = docopt(docstr)
-    print(args)
-    num_gpus = args['--num_gpus']
-    gpu_start = args['--gpu_start']
-    torch.cuda.set_device(gpu_start)
-    num_workers = 3 * num_gpus
-    device_ids = range(gpu_start, gpu_start + num_gpus)
-    torch.cuda.set_device(gpu_start)
-    bs = args['--bs'] * num_gpus 
-
-    opt = args['--opt']
-    epochs = args['--epochs']
-    lr = args['--lr']
-    wd = args['--wd']
-    use_wd_sched = args['--uws']
-    lr_div = args['--lr_div']
-    save_starter = args['--save_starter']
-    model_name = args['--model_name']
-    debug = args['--debug']
-
-    if opt == 'full':
-        sequential = args['--sequential']
-        train_on_full_dataset(epochs=epochs, lrs=[lr/lr_div, lr], sequential=sequential, wds=[wd/lr_div, wd],
-                use_wd_sched=use_wd_sched, save_starter='full_dataset_in_0', model_name=model_name)
-    else:
-        city_code = args['city_code']
-        learn, denorm = learner_on_dataset(datapaths[city_code])
-
-        save_idx = args['save_idx']
-        save_name = args['save_name']
-        cycle_len = args['cycle_len']
-        train_and_plot(save_idx, save_name, epoch=epochs, lrs=lrs, wds=wds, use_wd_sched=use_wd_sched,
-                cycle_len=cycle_len, use_clr=None,
-                best_save_name=save_name)
-
-def learn_init(num_gpus=1, gpu_start=0, bs=32, debug=False):
-    global _num_gpus, _gpu_start, _num_workers, _device_ids, _bs, _debug
-    _num_gpus = num_gpus
-    _gpu_start = gpu_start
-    _num_workers = 3 * num_gpus
-    device_ids = range(gpu_start, gpu_start + num_gpus)
-    _bs = 32 * num_gpus 
-    _debug = debug
-    torch.cuda.set_device(_gpu_start)
-
+#    docstr = """
+#    Usage:
+#        learn.py [options]
+#
+#    Options:
+#        -h, --help                  Print this message
+#        
+#        Read code for more.
+#    """
+#    if __name__ == '__main__':
+#        args = docopt(docstr)
+#        print(args)
+#        num_gpus = args['--num_gpus']
+#        gpu_start = args['--gpu_start']
+#        torch.cuda.set_device(gpu_start)
+#        num_workers = 3 * num_gpus
+#        device_ids = range(gpu_start, gpu_start + num_gpus)
+#        torch.cuda.set_device(gpu_start)
+#        bs = args['--bs'] * num_gpus 
+#
+#        opt = args['--opt']
+#        epochs = args['--epochs']
+#        lr = args['--lr']
+#        wd = args['--wd']
+#        use_wd_sched = args['--uws']
+#        lr_div = args['--lr_div']
+#        save_starter = args['--save_starter']
+#        model_name = args['--model_name']
+#        debug = args['--debug']
+#
+#        if opt == 'full':
+#            sequential = args['--sequential']
+#            train_on_full_dataset(epochs=epochs, lrs=[lr/lr_div, lr], sequential=sequential, wds=[wd/lr_div, wd],
+#                    use_wd_sched=use_wd_sched, save_starter='full_dataset_in_0', model_name=model_name)
+#        else:
+#            city_code = args['city_code']
+#            learn, denorm = learner_on_dataset(datapaths[city_code])
+#
+#            save_idx = args['save_idx']
+#            save_name = args['save_name']
+#            cycle_len = args['cycle_len']
+#            train_and_plot(save_idx, save_name, epoch=epochs, lrs=lrs, wds=wds, use_wd_sched=use_wd_sched,
+#                    cycle_len=cycle_len, use_clr=None,
+#                    best_save_name=save_name)
