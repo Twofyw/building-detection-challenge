@@ -20,6 +20,9 @@ import shapely.ops
 import shapely.geometry
 import skimage.transform
 import rasterio.features
+from PIL import Image
+from PIL import ImageDraw
+import matplotlib.pyplot as plt
 
 
 MODEL_NAME = 'v17'
@@ -258,8 +261,8 @@ def _internal_test_predict_best_param(area_id,
 
             pos_j = int(math.floor(slice_pos / math.sqrt(num_slice)))
             pos_i = int(slice_pos % math.sqrt(num_slice))
-            x0 = STRIDE_SZ * pos_i
-            y0 = STRIDE_SZ * pos_j
+            x0 = STRIDE_SZ * pos_j
+            y0 = STRIDE_SZ * pos_i
 
             for slice_pred in slice_pred_list:
                 pred_values[x0:x0+INPUT_SIZE, y0:y0+INPUT_SIZE] += (
@@ -270,7 +273,7 @@ def _internal_test_predict_best_param(area_id,
             y_pred_idx = skimage.transform.resize(
                 rescale_pred[idx][0], (650, 650))
             pred_values += y_pred_idx
-        pred_count += 1
+        #pred_count += 1
 
         # Normalize
         pred_values = pred_values / pred_count
@@ -290,10 +293,13 @@ def _internal_validate_predict_best_param(area_id,
     fn_valtest = FMT_VALTEST_IMAGELIST_PATH.format(prefix=prefix)
     df_valtest = pd.read_csv(fn_valtest, index_col='ImageId')
 
-    pred_values_array = np.zeros((len(df_valtest), 650, 650))
+    if slice_pred_list[0].shape[-1] == 3:
+        shape = [650, 650, 3]
+    else: shape = [650, 650]
+    pred_values_array = np.zeros([len(df_valtest)] + shape)
     for idx, image_id in enumerate(df_valtest.index.tolist()):
-        pred_values = np.zeros((650, 650))
-        pred_count = np.zeros((650, 650))
+        pred_values = np.zeros(shape)
+        pred_count = np.zeros(shape)
         for slice_pos in range(9):
             slice_idx = idx * 9 + slice_pos
 
@@ -311,7 +317,7 @@ def _internal_validate_predict_best_param(area_id,
             y_pred_idx = skimage.transform.resize(
                 rescale_pred[idx][0], (650, 650))
             pred_values += y_pred_idx
-        pred_count += 1
+        #pred_count += 1
 
         # Normalize
         pred_values = pred_values / pred_count
@@ -380,6 +386,7 @@ def _internal_pred_to_poly_file(area_id,
         f.write("ImageId,BuildingId,PolygonWKT_Pix,Confidence\n")
         for idx, image_id in enumerate(df_valtest.index.tolist()):
             df_poly = mask_to_poly(y_pred[idx], min_polygon_area_th=min_th)
+            mask_fn = '/data/ywx/building-detection-challenge/data/working/images/v5/pred_poly/' + image_id + '.png'
             if len(df_poly) > 0:
                 for i, row in df_poly.iterrows():
                     line = "{},{},\"{}\",{:.6f}\n".format(
@@ -389,11 +396,12 @@ def _internal_pred_to_poly_file(area_id,
                         row.area_ratio)
                     line = _remove_interiors(line)
                     f.write(line)
+
             else:
                 f.write("{},{},{},0\n".format(
-                    image_id,
-                    -1,
-                    "POLYGON EMPTY"))
+                image_id,
+                -1,
+                "POLYGON EMPTY"))
 
     # Validation solution file
     fn_true = FMT_TRAIN_SUMMARY_PATH.format(prefix=prefix)
@@ -420,7 +428,7 @@ def _internal_pred_to_poly_file(area_id,
 
 
 def mask_to_poly(mask, min_polygon_area_th=MIN_POLYGON_AREA):
-    mask = (mask > 0.5).astype(np.uint8)
+    mask = (mask > .5).astype(np.uint8)
     shapes = rasterio.features.shapes(mask.astype(np.int16), mask > 0)
     poly_list = []
     mp = shapely.ops.cascaded_union(
@@ -454,8 +462,8 @@ def cli():
     pass
 
 
-@cli.command()
-@click.option('--testonly/--no-testonly', default=True)
+#@cli.command()
+#@click.option('--testonly/--no-testonly', default=True)
 def testmerge(testonly):
     # file check: test
     for area_id in range(2, 6):
@@ -600,7 +608,6 @@ def evalfscore(datapath, y_pred):
         rescale_pred_list=[],
         slice_pred_list=[y_pred],
     )
-    print(y_pred.shape)
 
     # Make parent directory
     fn_out = FMT_VALTESTPOLY_PATH.format(prefix)

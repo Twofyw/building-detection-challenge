@@ -124,7 +124,7 @@ FMT_FULLMODEL_LAST_PATH = MODEL_DIR + "/{}_full_weights_last.h5"
 datapaths = ['data/train/AOI_3_Paris_Train', 'data/train/AOI_2_Vegas_Train', 'data/train/AOI_4_Shanghai_Train', 'data/train/AOI_5_Khartoum_Train']
 ################################################################
 
-def get_data(area_id, is_test, max_workers=3, debug=False, is_pred=False):
+def get_data(area_id, is_test, max_workers=3, debug=False, is_pred=False, test_only=False):
     prefix = area_id_to_prefix(area_id)
     fn_train = FMT_VALTEST_IMAGELIST_PATH.format(prefix=prefix) if is_test\
 	else FMT_VALTRAIN_IMAGELIST_PATH.format(prefix=prefix)
@@ -164,17 +164,17 @@ def get_data(area_id, is_test, max_workers=3, debug=False, is_pred=False):
 
     X_val= X_val.astype('float')
     if is_pred:
-        y_val = None
+        y_val = X_val
     else:
         y_val = y_val.astype('float')
     return X_val, y_val
 
-def get_dataset(datapath, debug=False, is_pred=False):
+def get_dataset(datapath, debug=False, is_pred=False, test_only=False):
     area_id = directory_name_to_area_id(datapath)
     prefix = area_id_to_prefix(area_id)
-    val_x, val_y = get_data(area_id, True, debug=debug, is_pred=is_pred)
+    val_x, val_y = get_data(area_id, True, debug=debug, is_pred=is_pred, test_only=test_only)
     val_y = np.broadcast_to(val_y, [val_y.shape[0], ORIGINAL_SIZE, ORIGINAL_SIZE, 3])
-    if not is_pred:
+    if not is_pred or not test_only:
         trn_x, trn_y = get_data(area_id, False, debug=debug)
         trn_y = np.broadcast_to(trn_y, [trn_y.shape[0], ORIGINAL_SIZE, ORIGINAL_SIZE, 3])
     else:
@@ -367,10 +367,10 @@ def get_learn(md, model):
     return learn
     
 def learner_on_dataset(datapath, bs, device_ids, num_workers, model_name='unet', debug=False,
-        data=None, global_dataset=False, num_slice=9, sz=192, is_pred=False):
+        data=None, global_dataset=False, num_slice=9, sz=192, is_pred=False, test_only=False):
     if data is None:
         data = (trn_x,trn_y), (val_x,val_y) = get_dataset(datapath, debug=debug,
-                is_pred=is_pred)
+                is_pred=is_pred, test_only=test_only)
     md, model, denorm = get_md_model([datapath], data, bs, device_ids,
             num_workers, model_name=model_name, global_dataset=global_dataset,
             num_slice=num_slice, sz=sz)
