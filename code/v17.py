@@ -366,7 +366,8 @@ def _internal_pred_to_poly_file_test(area_id,
 
 def _internal_pred_to_poly_file(area_id,
                                 y_pred,
-                                min_th=MIN_POLYGON_AREA):
+                                min_th=MIN_POLYGON_AREA,
+                                thresh=0.5):
     """
     Write out valtest poly and truepoly
     """
@@ -385,8 +386,8 @@ def _internal_pred_to_poly_file(area_id,
     with open(fn_out, 'w') as f:
         f.write("ImageId,BuildingId,PolygonWKT_Pix,Confidence\n")
         for idx, image_id in enumerate(df_valtest.index.tolist()):
-            df_poly = mask_to_poly(y_pred[idx], min_polygon_area_th=min_th)
-            mask_fn = '/data/ywx/building-detection-challenge/data/working/images/v5/pred_poly/' + image_id + '.png'
+            df_poly = mask_to_poly(y_pred[idx], min_polygon_area_th=min_th,
+                    thresh=thresh)
             if len(df_poly) > 0:
                 for i, row in df_poly.iterrows():
                     line = "{},{},\"{}\",{:.6f}\n".format(
@@ -425,10 +426,11 @@ def _internal_pred_to_poly_file(area_id,
                 r.PolygonWKT_Pix,
                 1.0)
             f.write(line)
+        return 
 
-
-def mask_to_poly(mask, min_polygon_area_th=MIN_POLYGON_AREA):
-    mask = (mask > .5).astype(np.uint8)
+def mask_to_poly(mask, min_polygon_area_th=MIN_POLYGON_AREA,
+        thresh=0.5):
+    mask = (mask > thresh).astype(np.uint8)
     shapes = rasterio.features.shapes(mask.astype(np.int16), mask > 0)
     poly_list = []
     mp = shapely.ops.cascaded_union(
@@ -533,17 +535,17 @@ def testmerge(testonly):
                 f.write(line)
 
 
-@cli.command()
-@click.argument('datapath', type=str)
+#@cli.command()
+#@click.argument('datapath', type=str)
 def testproc(datapath, y_pred):
     area_id = directory_name_to_area_id(datapath)
     prefix = area_id_to_prefix(area_id)
     logger.info(">>>> Test proc for {}".format(prefix))
 
-    logger.info("import modules")
-    v9s = importlib.import_module('v9s')
-    v13 = importlib.import_module('v13')
-    v16 = importlib.import_module('v16')
+   # logger.info("import modules")
+   # v9s = importlib.import_module('v9s')
+   # v13 = importlib.import_module('v13')
+   # v16 = importlib.import_module('v16')
 
     # Predict first
    # logger.info("Prediction phase (v9s)")
@@ -583,7 +585,7 @@ def testproc(datapath, y_pred):
 
 #@cli.command()
 #@click.argument('datapath', type=str)
-def evalfscore(datapath, y_pred):
+def evalfscore(datapath, y_pred, thresh=0.5):
     area_id = directory_name_to_area_id(datapath)
     prefix = area_id_to_prefix(area_id)
     logger.info("Evaluate fscore on validation set: {}".format(prefix))
@@ -616,24 +618,34 @@ def evalfscore(datapath, y_pred):
 
     # Ensemble individual models and write output files
     rows = []
-    for th in [30, 60, 90, 120, 150, 180, 210, 240]:
+    highest_fscore = 0
+    precision, recall = 0, 0
+    for th in range(30, 150, 30):
         logger.info(">>> TH: {}".format(th))
 
         _internal_pred_to_poly_file(
             area_id,
             y_pred,
-            min_th=th)
+            min_th=th,
+            thresh=thresh)
         evaluate_record = _calc_fscore_per_aoi(area_id)
         evaluate_record['min_area_th'] = th
         evaluate_record['area_id'] = area_id
         logger.info("\n" + json.dumps(evaluate_record, indent=4))
+        fscore = evaluate_record['fscore']  
         rows.append(evaluate_record)
+        if fscore > highest_fscore:
+            highest_fscore = fscore
+            (precision, recall) = (evaluate_record['precision'],
+                    evaluate_record['recall'])
+
 
     pd.DataFrame(rows).to_csv(
         FMT_VALMODEL_EVALTHHIST.format(prefix),
         index=False)
 
     logger.info("Evaluate fscore on validation set: {} .. done".format(prefix))
+    return highest_fscore, precision, recall
 
 
 if __name__ == '__main__':

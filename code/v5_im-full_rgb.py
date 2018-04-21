@@ -777,13 +777,15 @@ def preproc_train(datapath):
         logger.info("Generate MASK (valtest)")
         prep_image_mask(area_id, is_valtrain=False)
 
-    # Image HDF5 store (RGB)
-    if Path(FMT_VALTRAIN_IM_STORE.format(prefix)).exists():
+    # Image store (RGB)
+    #if Path(FMT_VALTRAIN_IM_STORE.format(prefix)).exists():
+    if False:
         logger.info("Generate RGB_STORE (valtrain) ... skip")
     else:
         logger.info("Generate RGB_STORE (valtrain)")
         prep_rgb_image_store_train(area_id, datapath, is_valtrain=True)
-    if Path(FMT_VALTEST_IM_STORE.format(prefix)).exists():
+    #if Path(FMT_VALTEST_IM_STORE.format(prefix)).exists():
+    if False:
         logger.info("Generate RGB_STORE (valtest) ... skip")
     else:
         logger.info("Generate RGB_STORE (valtest)")
