@@ -5,8 +5,5 @@ u-net-release
 models
 data_train.pickle
 *~
-<<<<<<< HEAD
 *.log
-=======
 *.swp
->>>>>>> cc2bc517cff64d28a16ee456047946c73371b45a
