@@ -200,7 +200,8 @@ class GlobalArraysDataset(BaseDataset):
         self.rescale = rescale
         self.is_test = is_test
         self.padding_sz = 59
-        self.sz_i = self.sz_i + 2 * self.padding_sz
+        if is_test:
+            self.sz_i = self.sz_i + 2 * self.padding_sz
         super().__init__(transform)
 
     def get_im(self, i, is_y):
@@ -214,10 +215,10 @@ class GlobalArraysDataset(BaseDataset):
             im = np.copy(im)
             return skimage.transform.resize(im, (self.sz, self.sz))
         else:
-            #if self.is_test:
-            im = np.pad(im, ((self.padding_sz, self.padding_sz),
-                (self.padding_sz, self.padding_sz), (0, 0)), 
-                'reflect')
+            if self.is_test:
+                im = np.pad(im, ((self.padding_sz, self.padding_sz),
+                    (self.padding_sz, self.padding_sz), (0, 0)), 
+                    'reflect')
             slice_pos = i % self.num_slice
             a = np.sqrt(self.num_slice)
             cut_j = slice_pos // a
@@ -254,7 +255,7 @@ class UpsampleModel():
     def get_layer_groups(self, precompute):
         c = children(self.model.module)
         return [c[:self.cut_base],
-           c[self.cut_base:]]
+                c[self.cut_base:]]
 
 def sep_iou(y_pred, y_true, thresh=0.5):
     return np.array([jaccard_coef(p, t) for (p, t) in zip(y_pred, y_true)])
@@ -488,19 +489,19 @@ def plot_worse_preds(x, y, preds, crit=jaccard_coef, scores=None, shift=0,
     return scores, lowest_iou_idx
 
 # sequential: if True, in one outer loop, every dataset is trained only once
-def train_on_full_dataset(epochs, lrs, wds, sequential=False, save_starter='full_dataset_beginner',\
+def train_on_full_dataset(epochs, lrs, wds, sequential=False, save_starter='',\
                           cycle_len=2, cycle_mult=2, save_path=Path('data/figs'), datapath_slice=0,\
-                         epoch_shift=0, use_wd_sched=False, model_name='unet', **kwargs):
+                         epoch_shift=0, use_wd_sched=False, model_name='unet',
+                         rescale=False, **kwargs):
     global learn, denorm
     for out_epoch in tqdm.tnrange(epochs if sequential else 1, desc='out'):
         datapath_slice = 0 if sequential else datapath_slice
         for i, datapath in tqdm.tqdm_notebook(enumerate(datapaths[datapath_slice:]),\
                                               total=len(datapaths), desc='datapaths'):
             i += epoch_shift
-            if last_datapath == datapath:
-                learn, denorm = load_backup_learn(model_name=model_name)
-            else:
-                learn, denorm = learner_on_dataset(datapath, model_name=model_name)
+            learn, denorm = learner_on_dataset(datapath, bs, device_ids, num_workers,
+                    model_name=model_name, debug=debug, data=data, num_slice=num_slice, sz=sz,
+                    is_eval=False, is_pred=False, rescale=rescale)
             
             best_save_name = 'full_dataset_out' if sequential else 'full_dataset_in'
             epoch_save_name_base = 'full_dataset'

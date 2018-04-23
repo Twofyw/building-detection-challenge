@@ -10,6 +10,7 @@ parser.add_argument('--num_gpus', type=int, help='number of GPU cores', default=
 parser.add_argument('--gpu_start', type=int, help='first GPU index', default=0)
 parser.add_argument('--bs', type=int, help='batch size', default=8)
 parser.add_argument('--num_slice', type=int, help='number of slices to cut per image', default=9)
+parser.add_argument('--model_name', help='unet/deeplab', default='deeplab')
 
 # train
 parser.add_argument('--learn', help='learning trigger', action='store_true', default=False)
@@ -18,6 +19,7 @@ parser.add_argument('--lr', type=float, help='set lr')
 parser.add_argument('--use_wd_sched', help='training trigger', action='store_true', default=False)
 parser.add_argument('--wd', type=float, help='set wd')
 parser.add_argument('--n_cycles', type=int, help='number of epochs')
+parser.add_argument('--start', help='start immediately', action='store_true', default=False)
 
 
 # predict
@@ -47,10 +49,9 @@ device_ids = range(gpu_start, gpu_start + num_gpus)
 torch.cuda.set_device(gpu_start)
 bs = args.bs
 
-model_name = 'deeplab'
+model_name = args.model_name
 datapaths = ['data/train/AOI_2_Vegas_Train', 'data/train/AOI_3_Paris_Train', 
              'data/train/AOI_4_Shanghai_Train', 'data/train/AOI_5_Khartoum_Train']
-model_name = 'deeplab'
 load_paths = [model_name + '-' + o for o in ['vegas', 'paris', 'shanghai', '5']]
 datapath = datapaths[args.datapath_idx]
 base_load_path = load_paths[args.datapath_idx]
@@ -81,16 +82,20 @@ if args.learn:
     else:
         learn_load_path = base_load_path
         learn_save_path = base_save_path
+
     learn.load(learn_load_path)
     learn.unfreeze()
 
     lr = args.lr
+    lrs = [lr / 9, lr]
     wd = args.wd
+    wds = [wd / 3, wd]
     use_wd_sched = args.use_wd_sched
     n_cycles = args.n_cycles
 
-    train_and_plot(learn, 0, learn_save_path, lrs = lr, n_cycles=n_cycles, wds=wd, use_wd_sched=use_wd_sched,
-        cycle_len=2, cycle_mult=2, best_save_name=learn_save_path)
+    if args.start:
+        train_and_plot(learn, 0, learn_save_path, lrs = lrs, n_cycles=n_cycles, wds=wds, use_wd_sched=use_wd_sched,
+            cycle_len=2, cycle_mult=2, best_save_name=learn_save_path)
 
 ### pred
 elif args.pred:
