@@ -124,129 +124,127 @@ FMT_FULLMODEL_LAST_PATH = MODEL_DIR + "/{}_full_weights_last.h5"
 datapaths = ['data/train/AOI_3_Paris_Train', 'data/train/AOI_2_Vegas_Train', 'data/train/AOI_4_Shanghai_Train', 'data/train/AOI_5_Khartoum_Train']
 ################################################################
 
-def get_data(area_id, is_test, max_workers=3, debug=False, is_pred=False):
+def get_data(area_id, is_test, max_workers=3, debug=False, is_pred=False, X_only=False):
     prefix = area_id_to_prefix(area_id)
-    fn_train = FMT_VALTEST_IMAGELIST_PATH.format(prefix=prefix) if is_test\
-	else FMT_VALTRAIN_IMAGELIST_PATH.format(prefix=prefix)
-    fn_train = FMT_TEST_IMAGELIST_PATH.format(prefix=prefix) if is_pred\
-            else fn_train
-    df_train = pd.read_csv(fn_train)
-    
-    fn_im = FMT_VALTEST_MASK_STORE.format(prefix) if is_test\
-	else FMT_VALTRAIN_MASK_STORE.format(prefix)
     if debug:
-        slice_n = 50
+        slice_n = 9
     else:
         slice_n = None
-    if not is_pred:
-        y_val = np.empty((slice_n if debug else df_train.shape[0], ORIGINAL_SIZE, ORIGINAL_SIZE, 1))
+        
+    if is_pred:
+        fn_train = FMT_TEST_IMAGELIST_PATH.format(prefix=prefix)
+        fn_im = FMT_TEST_IM_STORE
+    else:
+        fn_train = FMT_VALTEST_IMAGELIST_PATH.format(prefix=prefix) if is_test\
+                else FMT_VALTRAIN_IMAGELIST_PATH.format(prefix=prefix)
+        fn_im = FMT_VALTEST_MASK_STORE.format(prefix) if is_test\
+                else FMT_VALTRAIN_MASK_STORE.format(prefix)
+    df_train = pd.read_csv(fn_train)
+    
+    if not X_only:
+        y = np.empty((slice_n if debug else df_train.shape[0], ORIGINAL_SIZE, ORIGINAL_SIZE, 1))
         with tb.open_file(fn_im, 'r') as f:                                         
             for i, image_id in tqdm.tqdm_notebook(enumerate(df_train.ImageId.tolist()[:slice_n]),\
-                    total=df_train.shape[0], desc='ims'):
+                    total=df_train.shape[0], desc='gt'):
                 fn = '/' + image_id
-                y_val[i] = np.array(f.get_node(fn))[..., None]
+                y[i] = np.array(f.get_node(fn))[..., None]
+    else:
+        y = None
             
+    # always get X
+    if is_pred:
+        fn_im = FMT_TEST_IM_STORE
+    else:
+        fn_im = FMT_VALTEST_IM_FOLDER if is_test else FMT_VALTRAIN_IM_FOLDER
 
-    fn_im = FMT_VALTEST_IM_FOLDER if is_test else FMT_VALTRAIN_IM_FOLDER
-    fn_im = FMT_TEST_IM_STORE if is_pred else fn_im
-    X_val = np.empty((slice_n if debug else df_train.shape[0], ORIGINAL_SIZE, ORIGINAL_SIZE, 3))
+    X = np.empty((slice_n if debug else df_train.shape[0], ORIGINAL_SIZE, ORIGINAL_SIZE, 3))
     if max_workers == 1:
         for i, image_id in tqdm.tqdm_notebook(enumerate(df_train.ImageId.tolist()[:slice_n]),\
-		total=df_train.shape[0], desc='ims'):
-            X_val[i] = plt.imread(fn_im + image_id + '.png')[...,:3]
+                total=df_train.shape[0], desc='ims'):
+            X[i] = plt.imread(fn_im + image_id + '.png')[...,:3]
     else:
         with ThreadPoolExecutor(max_workers=max_workers) as e:
             gen = e.map(plt.imread, [fn_im + image_id + '.png'\
                     for image_id in df_train.ImageId.tolist()[:slice_n]])
             for i, im in enumerate(gen):
-                X_val[i] = im[...,:3]
-#         im = np.moveaxis(im, -1, 0)
+                X[i] = im[...,:3]
 
-    X_val= X_val.astype('float')
-    if is_pred:
-        y_val = None
-    else:
-        y_val = y_val.astype('float')
-    return X_val, y_val
+    X = X.astype('float')
+    return X, y
 
-def get_dataset(datapath, debug=False, is_pred=False):
+def get_dataset(datapath, debug=False, is_eval=False, is_pred=False):
     area_id = directory_name_to_area_id(datapath)
     prefix = area_id_to_prefix(area_id)
-    val_x, val_y = get_data(area_id, True, debug=debug, is_pred=is_pred)
-    val_y = np.broadcast_to(val_y, [val_y.shape[0], ORIGINAL_SIZE, ORIGINAL_SIZE, 3])
-    if not is_pred:
-        trn_x, trn_y = get_data(area_id, False, debug=debug)
+    
+    X_only = is_pred
+    val_x, val_y = get_data(area_id, is_test=True, debug=debug, is_pred=is_pred, X_only=X_only)
+    if not X_only:
+        val_y = np.broadcast_to(val_y, [val_y.shape[0], ORIGINAL_SIZE, ORIGINAL_SIZE, 3])
+    if not is_pred and not is_eval:
+        trn_x, trn_y = get_data(area_id, is_test=False, debug=debug, is_pred=is_pred, X_only=X_only)
+        # training set is always with y
         trn_y = np.broadcast_to(trn_y, [trn_y.shape[0], ORIGINAL_SIZE, ORIGINAL_SIZE, 3])
     else:
-        trn_x, trn_y = val_x, val_y
+        trn_x, trn_y = None, None
     return (trn_x,trn_y), (val_x,val_y)
 
-class ArraysSingleDataset(BaseDataset):
-    def __init__(self, x, y, transform, num_slice=9, sz=192):
-        # input: ch x w x h
-        self.x, self.y = x, y
-        self.sz_i = self.x[0].shape[1]
-        self.sz = sz
-        self.num_slice = num_slice
-        super().__init__(transform)
-        
-    def get_im(self, i, is_y):
-        if is_y:
-            im = self.y[i//self.num_slice]
-        else:
-            im = self.x[i//self.num_slice]
-        slice_pos = i % self.num_slice
-        a = np.sqrt(self.num_slice)
-        cut_j = slice_pos // a
-        cut_i = slice_pos % a
-        stride = (self.sz_i - self.sz) // (a - 1)
-        cut_x = int(cut_j * stride)
-        cut_y = int(cut_i * stride)
-        return im[cut_x:cut_x + self.sz, cut_y:cut_y + self.sz]
-    
-    def get_x(self, i): return self.get_im(i, False)
-    def get_y(self, i): return self.get_im(i, True)
-    def get_n(self): return self.x.shape[0] * self.num_slice
-    def get_sz(self): return self.sz
-    def get_c(self): return 1
-    def denorm(self, arr):
-        if type(arr) is not np.ndarray: arr = to_np(arr)
-        if len(arr.shape)==3: arr = arr[None]
-#         return np.clip(self.transform.denorm(np.rollaxis(arr,1,4)), 0, 1)
-        return self.transform.denorm(np.rollaxis(arr,1,4))
-
 (trn_x,trn_y), (val_x,val_y) = (None, None), (None, None)
-class PublicArrayDataset(BaseDataset):
-    def __init__(self, is_trn, y, transform, num_slice=9, sz=192):
+class GlobalArraysDataset(BaseDataset):
+    def __init__(self, is_trn, no_y, transform, num_slice=25, sz=256, rescale=False, is_test=False):
         self.is_trn = is_trn
-        self.sz_i = trn_x[0].shape[1] if self.is_trn else val_x[0].shape[1]
+        self.no_y = no_y
+        # only val_x always exists
+        self.sz_i = val_x[0].shape[1]
         self.sz = sz
         self.num_slice = num_slice
+        self.rescale = rescale
+        self.is_test = is_test
+        self.padding_sz = 59
+        self.sz_i = self.sz_i + 2 * self.padding_sz
         super().__init__(transform)
+
     def get_im(self, i, is_y):
+        new_i = i if self.rescale else i//self.num_slice
         if is_y:
-            im = trn_y[i//self.num_slice] if self.is_trn else val_y[i//self.num_slice]
+            im = trn_y[new_i] if self.is_trn else val_y[new_i]
         else:
-            im = trn_x[i//self.num_slice] if self.is_trn else val_x[i//self.num_slice]
-        slice_pos = i % self.num_slice
-        a = np.sqrt(self.num_slice)
-        cut_j = slice_pos // a
-        cut_i = slice_pos % a
-        stride = (self.sz_i - self.sz) // (a - 1)
-        cut_x = int(cut_j * stride)
-        cut_y = int(cut_i * stride)
-        return im[cut_x:cut_x + self.sz, cut_y:cut_y + self.sz]
+            im = trn_x[new_i] if self.is_trn else val_x[new_i]
+
+        if self.rescale:
+            im = np.copy(im)
+            return skimage.transform.resize(im, (self.sz, self.sz))
+        else:
+            #if self.is_test:
+            im = np.pad(im, ((self.padding_sz, self.padding_sz),
+                (self.padding_sz, self.padding_sz), (0, 0)), 
+                'reflect')
+            slice_pos = i % self.num_slice
+            a = np.sqrt(self.num_slice)
+            cut_j = slice_pos // a
+            cut_i = slice_pos % a
+            stride = (self.sz_i - self.sz) // (a - 1)
+            cut_x = int(cut_j * stride)
+            cut_y = int(cut_i * stride)
+            return im[cut_x:cut_x + self.sz, cut_y:cut_y + self.sz]
 
     def get_x(self, i): return self.get_im(i, False)
-    def get_y(self, i): return self.get_im(i, True)
-    def get_n(self): return trn_x.shape[0] * self.num_slice if self.is_trn else val_x.shape[0] * self.num_slice
-    def get_sz(self): return self.sz
+    def get_y(self, i):
+        if self.no_y:
+            # just return a placeholder
+            return self.get_im(i, False)[0]
+        return self.get_im(i, True)
+    def get_n(self): 
+        if self.rescale:
+            return val_x.shape[0]
+        else:
+            return val_x.shape[0] * self.num_slice
+    def get_sz(self): 
+        return self.sz
     def get_c(self): return 1
     def denorm(self, arr):
         if type(arr) is not np.ndarray: arr = to_np(arr)
         if len(arr.shape)==3: arr = arr[None]
-#         return np.clip(self.transform.denorm(np.rollaxis(arr,1,4)), 0, 1)
-        return self.transform.denorm(np.rollaxis(arr,1,4))
+        return np.clip(self.transform.denorm(np.rollaxis(arr,1,4)), 0, 1)
 
 class UpsampleModel():
     def __init__(self, model, cut_base=8, name='upsample'):
@@ -291,13 +289,12 @@ def sep_parallel(f, y_pred, y_true, num_workers=8, **kwargs):
     if num_workers == 0:
         for i, (p, y) in enumerate(zip(y_pred, y_true)):
             scores[i] = f(p, y, **kwargs)
-        return scores
         
     with ThreadPoolExecutor(max_workers=num_workers) as e:
         res = e.map(partial(f, **kwargs), y_pred, y_true)
         for i, score in enumerate(res):
             scores[i] = score
-        return scores
+    return scores
     
 def jaccard_coef_parallel(y_pred, y_true, thresh=0.5, num_workers=8):
     if num_workers == 0:
@@ -316,10 +313,10 @@ def get_rgb_mean_stat(area_id):
     std = [np.std(im_mean[i]) for i in range(3)]
     return np.stack([np.array(mean), np.array(std)])
 
-def get_md_model(datapaths, data, bs, device_ids, num_workers, model_name='unet', global_dataset=False, num_slice=9, sz=192):
+def get_md_model(datapaths, data, bs, device_ids, num_workers, model_name='unet',
+        num_slice=9, sz=256, no_y=False, rescale=False, **kwargs):
 #     (trn_x, trn_y), (val_x, val_y) = trn, val
-    if global_dataset:
-        global trn_x,trn_y, val_x,val_y
+    global trn_x,trn_y, val_x,val_y
         
     aug_tfms = transforms_top_down
     for o in aug_tfms: o.tfm_y = TfmType.CLASS
@@ -329,9 +326,9 @@ def get_md_model(datapaths, data, bs, device_ids, num_workers, model_name='unet'
     tfms = tfms_from_stats(stats, sz, crop_type=CropType.NO, tfm_y=TfmType.CLASS, aug_tfms=aug_tfms)
     
     (trn_x,trn_y), (val_x,val_y) = data
-    dataset = PublicArrayDataset if global_dataset else ArraysSingleDataset
-    trn, val = ((True, True), (False, False)) if global_dataset else ((trn_x,trn_y), (val_x,val_y))
-    datasets = ImageData.get_ds(dataset, trn, val, tfms, num_slice=num_slice, sz=sz)
+    trn, val = ((True, no_y), (False, no_y))
+    datasets = ImageData.get_ds(GlobalArraysDataset, trn, val, tfms, num_slice=num_slice, sz=sz,
+            rescale=rescale, **kwargs)
     md = ImageData('data', datasets, bs, num_workers=num_workers, classes=None)
     denorm = md.trn_ds.denorm
 
@@ -359,21 +356,25 @@ def get_md_model(datapaths, data, bs, device_ids, num_workers, model_name='unet'
 def expanded_loss(pred, target):
     return F.binary_cross_entropy(pred[:,0], target)
 def mask_acc(pred,targ): return accuracy_multi(pred[:,0], targ, 0.)
+def prec_rec(preds, targs):
+    pass
 def get_learn(md, model):
     learn=ConvLearner(md, model)
     learn.opt_fn=optim.Adam
     learn.crit=crit
-    learn.metrics=[mask_acc]
+    learn.metrics=[metrics]
     return learn
     
 def learner_on_dataset(datapath, bs, device_ids, num_workers, model_name='unet', debug=False,
-        data=None, global_dataset=False, num_slice=9, sz=192, is_pred=False):
+        data=None, num_slice=9, sz=256, is_eval=False, is_pred=False, rescale=False):
     if data is None:
         data = (trn_x,trn_y), (val_x,val_y) = get_dataset(datapath, debug=debug,
-                is_pred=is_pred)
+                is_eval=is_eval, is_pred=is_pred)
+    no_y = is_pred
+    is_test = is_pred or is_eval
     md, model, denorm = get_md_model([datapath], data, bs, device_ids,
-            num_workers, model_name=model_name, global_dataset=global_dataset,
-            num_slice=num_slice, sz=sz)
+            num_workers, model_name=model_name, num_slice=num_slice, sz=sz,
+            no_y=no_y, rescale=rescale, is_test=is_test)
     print('Data finished loading:', datapath)
     learn = get_learn(md, model)
     return learn, denorm, data
@@ -432,10 +433,36 @@ def plot_ims(data, labels=None, figsize=3):
                 col.set_xlabel(labels[i][j])
     fig.tight_layout()
 
-def plot_worse_preds(x, y, preds, learn, crit=jaccard_coef, scores=None, shift=0, n_ims=9,
-        is_best=False, thresh=0.5, **kwargs):
+def pr(pred, true, thresh=.5):
+    epsilon = T(1e-12)
+    bp = (pred > thresh).float()
+    proposals = torch.sum(bp) + epsilon
+    total = torch.sum(true) + epsilon
+    correct = torch.sum(bp * true) + epsilon
+    precision = correct / proposals
+    recall = correct / total
+    return precision, recall
+
+def pr_np(pred, true, thresh=.5):
+    epsilon = 1e-12
+    true = true.astype('float')
+    bp = (pred > thresh).astype('float')
+    proposals = np.sum(bp) + epsilon
+    total = np.sum(true) + epsilon
+    correct = np.sum(bp * true)
+    precision = correct / proposals
+    recall = correct / total
+    return precision, recall
+    
+
+def fscore(pred, true, thresh=0.5):
+    return 2 * torch.sum(true * pred) / torch.sum(true + pred + 1e-12)
+
+
+def plot_worse_preds(x, y, preds, crit=jaccard_coef, scores=None, shift=0,
+        n_ims=9, is_best=False, thresh=0.5, denorm=None, **kwargs):
     if scores is None:
-        scores = sep_parallel(crit, T(preds), T(y), **kwargs)
+        scores = sep_parallel(crit, preds, y, **kwargs)
     lowest_iou_idx = np.argsort(scores)
     if is_best:
         lowest_iou_idx = np.flip(lowest_iou_idx, 0)
@@ -448,11 +475,14 @@ def plot_worse_preds(x, y, preds, learn, crit=jaccard_coef, scores=None, shift=0
     bp = bool_pred(preds, thresh=thresh)
     xl, yl, predsl, bpl = [], [], [], []
     for i in lowest_iou_idx:
-        xl.append(learn.data.trn_ds.denorm(x[i]).squeeze())
+        if denorm is not None:
+            xl.append(learn.data.trn_ds.denorm(x[i]).squeeze())
+        else:
+            xl.append(x[i])
         yl.append(y[i])
         predsl.append(preds[i])
         bpl.append(bp[i])
-    data = zip(xl, yl, predsl, bpl)    
+    data = zip(xl, yl, predsl, bpl)
     labels = zip(*labels)
     plot_ims(data, labels=labels)
     return scores, lowest_iou_idx
@@ -493,7 +523,7 @@ def train_on_full_dataset(epochs, lrs, wds, sequential=False, save_starter='full
             plot_lr_loss(learn, Path(save_name))
 
 crit = expanded_loss
-metrics = jaccard_coef_parallel
+metrics = fscore
 
 #    docstr = """
 #    Usage:
