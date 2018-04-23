@@ -23,7 +23,7 @@ import rasterio.features
 from PIL import Image
 from PIL import ImageDraw
 import matplotlib.pyplot as plt
-
+from concurrent.futures import ThreadPoolExecutor
 
 MODEL_NAME = 'v17'
 ORIGINAL_SIZE = 650
@@ -123,6 +123,7 @@ def get_model_parameter(area_id):
 
     param = dict(
         min_poly_area=int(best_row['min_area_th']),
+        thresh = (best_row['thresh']),
     )
     return param
 
@@ -271,7 +272,7 @@ def _internal_test_predict_best_param(area_id,
 
         for rescale_pred in rescale_pred_list:
             y_pred_idx = skimage.transform.resize(
-                rescale_pred[idx][0], (650, 650))
+                rescale_pred[idx], (650, 650))
             pred_values += y_pred_idx
         #pred_count += 1
 
@@ -281,45 +282,57 @@ def _internal_test_predict_best_param(area_id,
 
     return pred_values_array
 
+def crop_center(im, padding_sz):
+    return im[padding_sz:-padding_sz,
+            padding_sz:-padding_sz]
 
 def _internal_validate_predict_best_param(area_id,
                                           save_pred=True,
                                           enable_tqdm=False,
                                           rescale_pred_list=[],
-                                          slice_pred_list=[]):
+                                          slice_pred_list=[],
+                                          debug=False,
+                                          num_slice=25):
     prefix = area_id_to_prefix(area_id)
 
     # Load valtest imagelist
     fn_valtest = FMT_VALTEST_IMAGELIST_PATH.format(prefix=prefix)
     df_valtest = pd.read_csv(fn_valtest, index_col='ImageId')
 
-    if slice_pred_list[0].shape[-1] == 3:
-        shape = [650, 650, 3]
-    else: shape = [650, 650]
-    pred_values_array = np.zeros([len(df_valtest)] + shape)
-    for idx, image_id in enumerate(df_valtest.index.tolist()):
+    padding_sz = 59
+
+    length = 9 if debug else len(df_valtest)
+    shape = [650 + padding_sz*2, 650 + padding_sz*2]
+    pred_values_array = np.zeros([length] + [650, 650])
+    #print(length)
+    for idx, image_id in enumerate(df_valtest.index.tolist()[:length]):
         pred_values = np.zeros(shape)
         pred_count = np.zeros(shape)
-        for slice_pos in range(9):
-            slice_idx = idx * 9 + slice_pos
+        if slice_pred_list:
+            for slice_pos in range(num_slice):
+                slice_idx = idx * num_slice + slice_pos
 
-            pos_j = int(math.floor(slice_pos / 3.0))
-            pos_i = int(slice_pos % 3)
-            x0 = STRIDE_SZ * pos_j
-            y0 = STRIDE_SZ * pos_i
+                a = np.sqrt(num_slice)
+                pos_j = slice_pos // a
+                pos_i = slice_pos % a
+                stride = (768 - 256) // (a - 1)
+                x0 = int(stride * pos_j)
+                y0 = int(stride * pos_i)
 
-            for slice_pred in slice_pred_list:
-                pred_values[x0:x0+INPUT_SIZE, y0:y0+INPUT_SIZE] += (
-                    slice_pred[slice_idx])
-                pred_count[x0:x0+INPUT_SIZE, y0:y0+INPUT_SIZE] += 1
+                for slice_pred in slice_pred_list:
+                    pred_values[x0:x0+INPUT_SIZE, y0:y0+INPUT_SIZE] += (
+                        slice_pred[slice_idx])
+                    pred_count[x0:x0+INPUT_SIZE, y0:y0+INPUT_SIZE] += 1
+        pred_values = crop_center(pred_values, padding_sz)
+        pred_count = crop_center(pred_count, padding_sz)
 
         for rescale_pred in rescale_pred_list:
             y_pred_idx = skimage.transform.resize(
-                rescale_pred[idx][0], (650, 650))
+                rescale_pred[idx], (650, 650))
             pred_values += y_pred_idx
-        #pred_count += 1
+            pred_count += 1
 
-        # Normalize
+            # Normalize
         pred_values = pred_values / pred_count
         pred_values_array[idx, :, :] = pred_values
 
@@ -328,7 +341,8 @@ def _internal_validate_predict_best_param(area_id,
 
 def _internal_pred_to_poly_file_test(area_id,
                                      y_pred,
-                                     min_th=MIN_POLYGON_AREA):
+                                     min_th=MIN_POLYGON_AREA,
+                                     thresh=0.5):
     """
     Write out test poly
     """
@@ -337,6 +351,7 @@ def _internal_pred_to_poly_file_test(area_id,
     # Load test imagelist
     fn_test = FMT_TEST_IMAGELIST_PATH.format(prefix=prefix)
     df_test = pd.read_csv(fn_test, index_col='ImageId')
+    num_slice = y_pred.shape[0] // df_test.shape[0]
 
     # Make parent directory
     fn_out = FMT_TESTPOLY_PATH.format(prefix)
@@ -347,7 +362,7 @@ def _internal_pred_to_poly_file_test(area_id,
     with open(fn_out, 'w') as f:
         f.write("ImageId,BuildingId,PolygonWKT_Pix,Confidence\n")
         for idx, image_id in enumerate(df_test.index.tolist()):
-            df_poly = mask_to_poly(y_pred[idx], min_polygon_area_th=min_th)
+            df_poly = mask_to_poly(y_pred[idx], min_polygon_area_th=min_th, thresh=thresh)
             if len(df_poly) > 0:
                 for i, row in df_poly.iterrows():
                     line = "{},{},\"{}\",{:.6f}\n".format(
@@ -367,7 +382,8 @@ def _internal_pred_to_poly_file_test(area_id,
 def _internal_pred_to_poly_file(area_id,
                                 y_pred,
                                 min_th=MIN_POLYGON_AREA,
-                                thresh=0.5):
+                                thresh=0.5,
+                                debug=False):
     """
     Write out valtest poly and truepoly
     """
@@ -383,9 +399,10 @@ def _internal_pred_to_poly_file(area_id,
         Path(fn_out).parent.mkdir(parents=True)
 
     # Ensemble individual models and write out output files
+    length = 9 if debug else df_valtest.shape[0]
     with open(fn_out, 'w') as f:
         f.write("ImageId,BuildingId,PolygonWKT_Pix,Confidence\n")
-        for idx, image_id in enumerate(df_valtest.index.tolist()):
+        for idx, image_id in enumerate(df_valtest.index.tolist()[:length]):
             df_poly = mask_to_poly(y_pred[idx], min_polygon_area_th=min_th,
                     thresh=thresh)
             if len(df_poly) > 0:
@@ -579,13 +596,14 @@ def testproc(datapath, y_pred):
         area_id,
         y_pred,
         min_th=param['min_poly_area'],
+        thresh=param['thresh'],
     )
     logger.info(">>>> Test proc for {} ... done".format(prefix))
 
 
 #@cli.command()
 #@click.argument('datapath', type=str)
-def evalfscore(datapath, y_pred, thresh=0.5):
+def evalfscore(datapath, y_pred_c, y_pred_r, thresh=0.5, num_slice=9, debug=False):
     area_id = directory_name_to_area_id(datapath)
     prefix = area_id_to_prefix(area_id)
     logger.info("Evaluate fscore on validation set: {}".format(prefix))
@@ -607,8 +625,10 @@ def evalfscore(datapath, y_pred, thresh=0.5):
     logger.info("Averaging")
     y_pred = _internal_validate_predict_best_param(
         area_id,
-        rescale_pred_list=[],
-        slice_pred_list=[y_pred],
+        rescale_pred_list=y_pred_r,
+        slice_pred_list=y_pred_c,
+        debug=debug,
+        num_slice=num_slice
     )
 
     # Make parent directory
@@ -617,36 +637,48 @@ def evalfscore(datapath, y_pred, thresh=0.5):
         Path(fn_out).parent.mkdir(parents=True)
 
     # Ensemble individual models and write output files
-    rows = []
-    highest_fscore = 0
-    precision, recall = 0, 0
-    for th in range(30, 150, 30):
-        logger.info(">>> TH: {}".format(th))
+    def find_thresh(thresh):
+        highest_fscore = 0
+        pr = []
+        best_rows = []
+        rows = []
+        for th in range(30, 150, 30):
+            logger.info(">>> TH: {}".format(th))
 
-        _internal_pred_to_poly_file(
-            area_id,
-            y_pred,
-            min_th=th,
-            thresh=thresh)
-        evaluate_record = _calc_fscore_per_aoi(area_id)
-        evaluate_record['min_area_th'] = th
-        evaluate_record['area_id'] = area_id
-        logger.info("\n" + json.dumps(evaluate_record, indent=4))
-        fscore = evaluate_record['fscore']  
-        rows.append(evaluate_record)
-        if fscore > highest_fscore:
-            highest_fscore = fscore
-            (precision, recall) = (evaluate_record['precision'],
-                    evaluate_record['recall'])
+            _internal_pred_to_poly_file(
+                area_id,
+                y_pred,
+                min_th=th,
+                thresh=thresh,
+                debug=debug)
+            evaluate_record = _calc_fscore_per_aoi(area_id)
+            evaluate_record['min_area_th'] = th
+            evaluate_record['area_id'] = area_id
+            evaluate_record['thresh'] = thresh
+            logger.info("\n" + json.dumps(evaluate_record, indent=4))
+            rows.append(evaluate_record)
 
-
-    pd.DataFrame(rows).to_csv(
+            fscore = evaluate_record['fscore']  
+            if fscore > highest_fscore:
+                highest_fscore = fscore
+                best_rows = rows
+                pr = evaluate_record['precision'], evaluate_record['recall']
+        return highest_fscore, pr, best_rows
+    
+    threshs = np.linspace(0, 0.6, 12)
+    res = []
+    for thresh in tqdm.tqdm_notebook(threshs):
+        res.append(find_thresh(thresh))
+        print(thresh, res[-1][0])
+    highest_fscores, prs, best_rows = zip(*res)
+    best_row = best_rows[np.argmax(highest_fscores)]
+    
+    pd.DataFrame(best_row).to_csv(
         FMT_VALMODEL_EVALTHHIST.format(prefix),
         index=False)
 
     logger.info("Evaluate fscore on validation set: {} .. done".format(prefix))
-    return highest_fscore, precision, recall
-
+    return highest_fscores, prs
 
 if __name__ == '__main__':
     cli()

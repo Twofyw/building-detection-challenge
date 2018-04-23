@@ -127,7 +127,7 @@ datapaths = ['data/train/AOI_3_Paris_Train', 'data/train/AOI_2_Vegas_Train', 'da
 def get_data(area_id, is_test, max_workers=3, debug=False, is_pred=False, X_only=False):
     prefix = area_id_to_prefix(area_id)
     if debug:
-        slice_n = 50
+        slice_n = 9
     else:
         slice_n = None
         
@@ -190,7 +190,7 @@ def get_dataset(datapath, debug=False, is_eval=False, is_pred=False):
 
 (trn_x,trn_y), (val_x,val_y) = (None, None), (None, None)
 class GlobalArraysDataset(BaseDataset):
-    def __init__(self, is_trn, no_y, transform, num_slice=9, sz=256, rescale=False):
+    def __init__(self, is_trn, no_y, transform, num_slice=25, sz=256, rescale=False, is_test=False):
         self.is_trn = is_trn
         self.no_y = no_y
         # only val_x always exists
@@ -198,6 +198,9 @@ class GlobalArraysDataset(BaseDataset):
         self.sz = sz
         self.num_slice = num_slice
         self.rescale = rescale
+        self.is_test = is_test
+        self.padding_sz = 59
+        self.sz_i = self.sz_i + 2 * self.padding_sz
         super().__init__(transform)
 
     def get_im(self, i, is_y):
@@ -208,8 +211,13 @@ class GlobalArraysDataset(BaseDataset):
             im = trn_x[new_i] if self.is_trn else val_x[new_i]
 
         if self.rescale:
+            im = np.copy(im)
             return skimage.transform.resize(im, (self.sz, self.sz))
         else:
+            #if self.is_test:
+            im = np.pad(im, ((self.padding_sz, self.padding_sz),
+                (self.padding_sz, self.padding_sz), (0, 0)), 
+                'reflect')
             slice_pos = i % self.num_slice
             a = np.sqrt(self.num_slice)
             cut_j = slice_pos // a
@@ -306,7 +314,7 @@ def get_rgb_mean_stat(area_id):
     return np.stack([np.array(mean), np.array(std)])
 
 def get_md_model(datapaths, data, bs, device_ids, num_workers, model_name='unet',
-        num_slice=9, sz=256, no_y=False, rescale=rescale):
+        num_slice=9, sz=256, no_y=False, rescale=False, **kwargs):
 #     (trn_x, trn_y), (val_x, val_y) = trn, val
     global trn_x,trn_y, val_x,val_y
         
@@ -319,7 +327,8 @@ def get_md_model(datapaths, data, bs, device_ids, num_workers, model_name='unet'
     
     (trn_x,trn_y), (val_x,val_y) = data
     trn, val = ((True, no_y), (False, no_y))
-    datasets = ImageData.get_ds(GlobalArraysDataset, trn, val, tfms, num_slice=num_slice, sz=sz, rescale=rescale)
+    datasets = ImageData.get_ds(GlobalArraysDataset, trn, val, tfms, num_slice=num_slice, sz=sz,
+            rescale=rescale, **kwargs)
     md = ImageData('data', datasets, bs, num_workers=num_workers, classes=None)
     denorm = md.trn_ds.denorm
 
@@ -353,7 +362,7 @@ def get_learn(md, model):
     learn=ConvLearner(md, model)
     learn.opt_fn=optim.Adam
     learn.crit=crit
-    learn.metrics=[mask_acc]
+    learn.metrics=[metrics]
     return learn
     
 def learner_on_dataset(datapath, bs, device_ids, num_workers, model_name='unet', debug=False,
@@ -362,9 +371,10 @@ def learner_on_dataset(datapath, bs, device_ids, num_workers, model_name='unet',
         data = (trn_x,trn_y), (val_x,val_y) = get_dataset(datapath, debug=debug,
                 is_eval=is_eval, is_pred=is_pred)
     no_y = is_pred
+    is_test = is_pred or is_eval
     md, model, denorm = get_md_model([datapath], data, bs, device_ids,
             num_workers, model_name=model_name, num_slice=num_slice, sz=sz,
-            no_y=no_y, rescale=rescale)
+            no_y=no_y, rescale=rescale, is_test=is_test)
     print('Data finished loading:', datapath)
     learn = get_learn(md, model)
     return learn, denorm, data
@@ -435,19 +445,18 @@ def pr(pred, true, thresh=.5):
 
 def pr_np(pred, true, thresh=.5):
     epsilon = 1e-12
+    true = true.astype('float')
     bp = (pred > thresh).astype('float')
     proposals = np.sum(bp) + epsilon
     total = np.sum(true) + epsilon
-    correct = np.sum(bp * true) + epsilon
+    correct = np.sum(bp * true)
     precision = correct / proposals
     recall = correct / total
     return precision, recall
     
 
 def fscore(pred, true, thresh=0.5):
-    precision, recall = pr_np(pred, true, thresh=thresh)
-    fscore = 2*precision*recall/(precision+recall)
-    return fscore
+    return 2 * torch.sum(true * pred) / torch.sum(true + pred + 1e-12)
 
 
 def plot_worse_preds(x, y, preds, crit=jaccard_coef, scores=None, shift=0,
@@ -514,7 +523,7 @@ def train_on_full_dataset(epochs, lrs, wds, sequential=False, save_starter='full
             plot_lr_loss(learn, Path(save_name))
 
 crit = expanded_loss
-metrics = jaccard_coef_parallel
+metrics = fscore
 
 #    docstr = """
 #    Usage:
