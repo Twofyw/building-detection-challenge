@@ -260,16 +260,6 @@ class UpsampleModel():
 def sep_iou(y_pred, y_true, thresh=0.5):
     return np.array([jaccard_coef(p, t) for (p, t) in zip(y_pred, y_true)])
     
-## cuda version
-def jaccard_coef_cuda(y_pred, y_true, thresh=0.5):
-    smooth = V(1e-12)
-    y_pred = (y_pred > thresh).float()
-    y_true = (y_true > thresh).float()
-    intersection = torch.sum(y_true * y_pred)
-    sum_ = torch.sum(y_true + y_pred)
-    jac = (intersection + smooth) / (sum_ - intersection + smooth)
-    return torch.mean(jac)
-
 ## np version
 def jaccard_coef(y_pred, y_true=None, thresh=0.5):
     if isinstance(y_pred, tuple):
@@ -284,6 +274,13 @@ def jaccard_coef(y_pred, y_true=None, thresh=0.5):
     sum_ = np.sum(y_true + y_pred)
     jac = (intersection + smooth) / (sum_ - intersection + smooth)
     return np.mean(jac)
+
+def jaccard_coef_loss(y_pred, y_true):
+    epsilon = 1e-12
+    y_pred_pos = torch.clamp(y_pred, 0, 1)
+    intersection = torch.sum(y_true * y_pred_pos)
+    sum_ = torch.sum(y_true + y_pred_pos)
+    return (intersection + epsilon) / (sum_ - intersection + epsilon)
 
 def sep_parallel(f, y_pred, y_true, num_workers=8, **kwargs):
     scores = np.empty(y_true.shape[0])
@@ -355,15 +352,19 @@ def get_md_model(datapaths, data, bs, device_ids, num_workers, model_name='unet'
     return md, models, denorm
 
 def expanded_loss(pred, target):
-    return F.binary_cross_entropy(pred[:,0], target)
+    return F.binary_cross_entropy_with_logits(pred[:,0], target) -\
+            torch.log(jaccard_coef_loss(pred[:,0], target) + 0.1)
+    
 def mask_acc(pred,targ): return accuracy_multi(pred[:,0], targ, 0.)
+def jaccard_coef_par(pred, target):
+    return jaccard_coef_loss(pred[:,0], target)
 def prec_rec(preds, targs):
     pass
 def get_learn(md, model):
     learn=ConvLearner(md, model)
     learn.opt_fn=optim.Adam
-    learn.crit=crit
-    learn.metrics=[metrics]
+    learn.crit=expanded_loss
+    learn.metrics=[mask_acc, fscore, jaccard_coef_par]
     return learn
     
 def learner_on_dataset(datapath, bs, device_ids, num_workers, model_name='unet', debug=False,
@@ -455,10 +456,8 @@ def pr_np(pred, true, thresh=.5):
     recall = correct / total
     return precision, recall
     
-
 def fscore(pred, true, thresh=0.5):
-    return 2 * torch.sum(true * pred) / torch.sum(true + pred + 1e-12)
-
+    return 2 * torch.sum(true * pred + 1e-12) / torch.sum(true + pred + 1e-12)
 
 def plot_worse_preds(x, y, preds, crit=jaccard_coef, scores=None, shift=0,
         n_ims=9, is_best=False, thresh=0.5, denorm=None, **kwargs):
@@ -523,9 +522,6 @@ def train_on_full_dataset(epochs, lrs, wds, sequential=False, save_starter='',\
             save_name = epoch_save_name_base + str(out_epoch) + '_' + str(i)
             plot_lr_loss(learn, Path(save_name))
 
-crit = expanded_loss
-metrics = fscore
-
 #    docstr = """
 #    Usage:
 #        learn.py [options]
@@ -566,7 +562,6 @@ metrics = fscore
 #
 #            save_idx = args['save_idx']
 #            save_name = args['save_name']
-#            cycle_len = args['cycle_len']
 #            train_and_plot(save_idx, save_name, epoch=epochs, lrs=lrs, wds=wds, use_wd_sched=use_wd_sched,
 #                    cycle_len=cycle_len, use_clr=None,
 #                    best_save_name=save_name)

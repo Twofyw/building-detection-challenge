@@ -82,8 +82,8 @@ if args.learn:
     else:
         learn_load_path = base_load_path
         learn_save_path = base_save_path
-    if args.load:
-        learn.load(learn_load_path)
+
+    learn.load(learn_load_path)
     learn.unfreeze()
 
     lr = args.lr
