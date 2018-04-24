@@ -364,7 +364,7 @@ def get_learn(md, model):
     learn=ConvLearner(md, model)
     learn.opt_fn=optim.Adam
     learn.crit=expanded_loss
-    learn.metrics=[mask_acc, fscore, jaccard_coef_par]
+    learn.metrics=[mask_acc, jaccard_coef_par]
     return learn
     
 def learner_on_dataset(datapath, bs, device_ids, num_workers, model_name='unet', debug=False,

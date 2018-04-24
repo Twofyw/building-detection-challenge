@@ -275,7 +275,7 @@ def jaccard_coef(y_pred, y_true=None, thresh=0.5):
     jac = (intersection + smooth) / (sum_ - intersection + smooth)
     return np.mean(jac)
 
-def jaccard_coef_loss(y_true, y_pred):
+def jaccard_coef_loss(y_pred, y_true):
     epsilon = 1e-12
     y_pred_pos = torch.clamp(y_pred, 0, 1)
     intersection = torch.sum(y_true * y_pred_pos)

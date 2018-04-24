@@ -19,6 +19,7 @@ parser.add_argument('--lr', type=float, help='set lr')
 parser.add_argument('--use_wd_sched', help='training trigger', action='store_true', default=False)
 parser.add_argument('--wd', type=float, help='set wd')
 parser.add_argument('--n_cycles', type=int, help='number of epochs')
+parser.add_argument('--load_starter', type=str, help='begin training with this model', default='')
 parser.add_argument('--start', help='start immediately', action='store_true', default=False)
 
 
@@ -43,7 +44,7 @@ num_slice = args.num_slice
 
 num_gpus = args.num_gpus
 gpu_start = args.gpu_start
-num_workers = 8
+num_workers = 0
 device_ids = range(gpu_start, gpu_start + num_gpus)
 # device_ids = [0,1,4,5]
 torch.cuda.set_device(gpu_start)
@@ -83,6 +84,8 @@ if args.learn:
         learn_load_path = base_load_path
         learn_save_path = base_save_path
 
+    if args.load_starter != '':
+        learn_load_path = args.load_starter
     learn.load(learn_load_path)
     learn.unfreeze()
 
