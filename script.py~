@@ -19,7 +19,7 @@ parser.add_argument('--lr', type=float, help='set lr')
 parser.add_argument('--use_wd_sched', help='training trigger', action='store_true', default=False)
 parser.add_argument('--wd', type=float, help='set wd')
 parser.add_argument('--n_cycles', type=int, help='number of epochs')
-parser.add_argument('--load_starter', type=str help='begin training with this model', default='')
+parser.add_argument('--load_starter', type=str, help='begin training with this model', default='')
 parser.add_argument('--start', help='start immediately', action='store_true', default=False)
 
 
@@ -61,13 +61,15 @@ base_save_path = 'debug' if args.debug else base_load_path
 scale_load_path = base_load_path + '-scale'
 scale_save_path = base_save_path + '-scale'
 
+def sigmoid(y):
+    return 1 / (1 + np.exp(-y))
 def manual_predict(learn):
     n = learn.data.val_ds.get_n()
     preds = np.empty((n, 256, 256))
     for o in tqdm.tqdm_notebook(range(0, n, bs)):
         end = min(n, o + bs)
         X = np.moveaxis(learn.data.val_ds.transform.norm([learn.data.val_ds.get_x(o) for o in range(o, end)])[0], -1, 1)
-        preds[o:end] = learn.predict_array(X).squeeze()
+        preds[o:end] = sigmoid(learn.predict_array(X).squeeze())
     return preds
  
 data = None
@@ -137,7 +139,7 @@ elif args.test:
     learn, denorm, data = learner_on_dataset(datapath, bs, device_ids, num_workers, model_name=model_name,
                                              debug=args.debug, data=data, num_slice=num_slice, sz=sz,
                                             is_eval=is_eval, is_pred=is_pred)
-    learn.load(load_path)
+    learn.load(base_load_path)
     preds_rescale = [manual_predict(learn)]
     testproc(datapath, preds_rescale)
 

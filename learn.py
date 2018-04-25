@@ -4,6 +4,7 @@ from pathlib import Path
 from glob import glob
 import tables as tb
 import tqdm
+from tqdm import tqdm_notebook
 import multiprocessing as mp
 import sys
 sys.path.insert(0, 'code')
@@ -144,7 +145,7 @@ def get_data(area_id, is_test, max_workers=3, debug=False, is_pred=False, X_only
     if not X_only:
         y = np.empty((slice_n if debug else df_train.shape[0], ORIGINAL_SIZE, ORIGINAL_SIZE, 1))
         with tb.open_file(fn_im, 'r') as f:                                         
-            for i, image_id in tqdm.tqdm_notebook(enumerate(df_train.ImageId.tolist()[:slice_n]),\
+            for i, image_id in tqdm_notebook(enumerate(df_train.ImageId.tolist()[:slice_n]),\
                     total=df_train.shape[0], desc='gt'):
                 fn = '/' + image_id
                 y[i] = np.array(f.get_node(fn))[..., None]
@@ -159,7 +160,7 @@ def get_data(area_id, is_test, max_workers=3, debug=False, is_pred=False, X_only
 
     X = np.empty((slice_n if debug else df_train.shape[0], ORIGINAL_SIZE, ORIGINAL_SIZE, 3))
     if max_workers == 1:
-        for i, image_id in tqdm.tqdm_notebook(enumerate(df_train.ImageId.tolist()[:slice_n]),\
+        for i, image_id in tqdm_notebook(enumerate(df_train.ImageId.tolist()[:slice_n]),\
                 total=df_train.shape[0], desc='ims'):
             X[i] = plt.imread(fn_im + image_id + '.png')[...,:3]
     else:
@@ -495,7 +496,7 @@ def train_on_full_dataset(epochs, lrs, wds, sequential=False, save_starter='',\
     global learn, denorm
     for out_epoch in tqdm.tnrange(epochs if sequential else 1, desc='out'):
         datapath_slice = 0 if sequential else datapath_slice
-        for i, datapath in tqdm.tqdm_notebook(enumerate(datapaths[datapath_slice:]),\
+        for i, datapath in tqdm_notebook(enumerate(datapaths[datapath_slice:]),\
                                               total=len(datapaths), desc='datapaths'):
             i += epoch_shift
             learn, denorm = learner_on_dataset(datapath, bs, device_ids, num_workers,
@@ -562,6 +563,10 @@ def train_on_full_dataset(epochs, lrs, wds, sequential=False, save_starter='',\
 #
 #            save_idx = args['save_idx']
 #            save_name = args['save_name']
+#            train_and_plot(save_idx, save_name, epoch=epochs, lrs=lrs, wds=wds, use_wd_sched=use_wd_sched,
+#                    cycle_len=cycle_len, use_clr=None,
+#                    best_save_name=save_name)
+from fastai.conv_learner import *
 #            train_and_plot(save_idx, save_name, epoch=epochs, lrs=lrs, wds=wds, use_wd_sched=use_wd_sched,
 #                    cycle_len=cycle_len, use_clr=None,
 #                    best_save_name=save_name)

@@ -44,7 +44,7 @@ num_slice = args.num_slice
 
 num_gpus = args.num_gpus
 gpu_start = args.gpu_start
-num_workers = 0
+num_workers = 8 if args.learn else 0
 device_ids = range(gpu_start, gpu_start + num_gpus)
 # device_ids = [0,1,4,5]
 torch.cuda.set_device(gpu_start)

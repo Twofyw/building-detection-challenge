@@ -665,7 +665,7 @@ def evalfscore(datapath, y_pred_c, y_pred_r, thresh=0.5, num_slice=9, debug=Fals
                 pr = evaluate_record['precision'], evaluate_record['recall']
         return highest_fscore, pr, best_rows
     
-    threshs = np.linspace(0, 0.6, 12)
+    threshs = np.linspace(0.2, 0.8, 13)
     res = []
     for thresh in tqdm.tqdm_notebook(threshs):
         res.append(find_thresh(thresh))
