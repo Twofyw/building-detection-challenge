@@ -287,11 +287,11 @@ def sep_parallel(f, y_pred, y_true, num_workers=8, **kwargs):
     if num_workers == 0:
         for i, (p, y) in enumerate(zip(y_pred, y_true)):
             scores[i] = f(p, y, **kwargs)
-        
-    with ThreadPoolExecutor(max_workers=num_workers) as e:
-        res = e.map(partial(f, **kwargs), y_pred, y_true)
-        for i, score in enumerate(res):
-            scores[i] = score
+    else: 
+        with ThreadPoolExecutor(max_workers=num_workers) as e:
+            res = e.map(partial(f, **kwargs), y_pred, y_true)
+            for i, score in enumerate(res):
+                scores[i] = score
     return scores
     
 def jaccard_coef_parallel(y_pred, y_true, thresh=0.5, num_workers=8):
@@ -364,7 +364,7 @@ def get_learn(md, model):
     learn=ConvLearner(md, model)
     learn.opt_fn=optim.Adam
     learn.crit=expanded_loss
-    learn.metrics=[mask_acc, fscore, jaccard_coef_par]
+    learn.metrics=[mask_acc, jaccard_coef_par]
     return learn
     
 def learner_on_dataset(datapath, bs, device_ids, num_workers, model_name='unet', debug=False,

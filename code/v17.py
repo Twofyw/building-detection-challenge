@@ -443,7 +443,6 @@ def _internal_pred_to_poly_file(area_id,
                 r.PolygonWKT_Pix,
                 1.0)
             f.write(line)
-        return 
 
 def mask_to_poly(mask, min_polygon_area_th=MIN_POLYGON_AREA,
         thresh=0.5):
@@ -607,12 +606,10 @@ def evalfscore(datapath, y_pred_c, y_pred_r, thresh=0.5, num_slice=9, debug=Fals
     area_id = directory_name_to_area_id(datapath)
     prefix = area_id_to_prefix(area_id)
     logger.info("Evaluate fscore on validation set: {}".format(prefix))
-
     logger.info("import modules")
    # v9s = importlib.import_module('v9s')
    # v13 = importlib.import_module('v13')
    # v16 = importlib.import_module('v16')
-
     # Predict first
     logger.info("Prediction phase")
    # y_pred_0 = v9s._internal_validate_predict_best_param(
@@ -621,16 +618,13 @@ def evalfscore(datapath, y_pred_c, y_pred_r, thresh=0.5, num_slice=9, debug=Fals
    #     area_id, enable_tqdm=True)
    # y_pred_2 = v16._internal_validate_predict_best_param(
    #     area_id, enable_tqdm=True)
-
     logger.info("Averaging")
     y_pred = _internal_validate_predict_best_param(
         area_id,
         rescale_pred_list=y_pred_r,
         slice_pred_list=y_pred_c,
         debug=debug,
-        num_slice=num_slice
-    )
-
+        num_slice=num_slice)
     # Make parent directory
     fn_out = FMT_VALTESTPOLY_PATH.format(prefix)
     if not Path(fn_out).parent.exists():
@@ -665,7 +659,7 @@ def evalfscore(datapath, y_pred_c, y_pred_r, thresh=0.5, num_slice=9, debug=Fals
                 pr = evaluate_record['precision'], evaluate_record['recall']
         return highest_fscore, pr, best_rows
     
-    threshs = np.linspace(0, 0.6, 12)
+    threshs = np.linspace(0.1, 0.9, 9)
     res = []
     for thresh in tqdm.tqdm_notebook(threshs):
         res.append(find_thresh(thresh))
@@ -678,7 +672,7 @@ def evalfscore(datapath, y_pred_c, y_pred_r, thresh=0.5, num_slice=9, debug=Fals
         index=False)
 
     logger.info("Evaluate fscore on validation set: {} .. done".format(prefix))
-    return highest_fscores, prs
+    return highest_fscores, prs, y_pred
 
 if __name__ == '__main__':
     cli()

@@ -44,7 +44,7 @@ num_slice = args.num_slice
 
 num_gpus = args.num_gpus
 gpu_start = args.gpu_start
-num_workers = 0
+num_workers = 8 if args.learn else 0
 device_ids = range(gpu_start, gpu_start + num_gpus)
 # device_ids = [0,1,4,5]
 torch.cuda.set_device(gpu_start)
@@ -61,6 +61,12 @@ base_save_path = 'debug' if args.debug else base_load_path
 scale_load_path = base_load_path + '-scale'
 scale_save_path = base_save_path + '-scale'
 
+
+
+
+
+
+
 def sigmoid(y):
     return 1 / (1 + np.exp(-y))
 def manual_predict(learn):
@@ -72,8 +78,13 @@ def manual_predict(learn):
         preds[o:end] = sigmoid(learn.predict_array(X).squeeze())
     return preds
  
+
+
+
+
+
 data = None
-### train
+################################## train
 if args.learn:
     is_eval, is_pred = False, False
     learn, denorm, data = learner_on_dataset(datapath, bs, device_ids, num_workers, model_name=model_name,
@@ -102,7 +113,10 @@ if args.learn:
         train_and_plot(learn, 0, learn_save_path, lrs = lrs, n_cycles=n_cycles, wds=wds, use_wd_sched=use_wd_sched,
             cycle_len=2, cycle_mult=2, best_save_name=learn_save_path)
 
-### pred
+
+
+
+################################### pred
 elif args.pred:
        
     is_eval, is_pred = True, False 
@@ -128,12 +142,16 @@ elif args.pred:
 
     if args.eval:
         # find optimum threshold
-        fscores, prs = evalfscore(datapath, [preds_1], preds_rescale, debug=args.debug, num_slice=num_slice)
+        fscores, prs, y_pred = evalfscore(datapath, [preds_1], preds_rescale, 
+                debug=args.debug, num_slice=num_slice)
         # fscores is automatically imported into jupyter notebook
         
 
-### test
-####### update test code first
+
+
+
+
+###################################### test
 elif args.test:
     is_eval, is_pred = False, True
     learn, denorm, data = learner_on_dataset(datapath, bs, device_ids, num_workers, model_name=model_name,

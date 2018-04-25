@@ -287,11 +287,11 @@ def sep_parallel(f, y_pred, y_true, num_workers=8, **kwargs):
     if num_workers == 0:
         for i, (p, y) in enumerate(zip(y_pred, y_true)):
             scores[i] = f(p, y, **kwargs)
-        
-    with ThreadPoolExecutor(max_workers=num_workers) as e:
-        res = e.map(partial(f, **kwargs), y_pred, y_true)
-        for i, score in enumerate(res):
-            scores[i] = score
+    else: 
+        with ThreadPoolExecutor(max_workers=num_workers) as e:
+            res = e.map(partial(f, **kwargs), y_pred, y_true)
+            for i, score in enumerate(res):
+                scores[i] = score
     return scores
     
 def jaccard_coef_parallel(y_pred, y_true, thresh=0.5, num_workers=8):
@@ -462,7 +462,7 @@ def fscore(pred, true, thresh=0.5):
 def plot_worse_preds(x, y, preds, crit=jaccard_coef, scores=None, shift=0,
         n_ims=9, is_best=False, thresh=0.5, denorm=None, **kwargs):
     if scores is None:
-        scores = sep_parallel(crit, preds, y, **kwargs)
+        scores = sep_parallel(crit, preds, y, **kwargs, num_workers=0)
     lowest_iou_idx = np.argsort(scores)
     if is_best:
         lowest_iou_idx = np.flip(lowest_iou_idx, 0)
