@@ -253,28 +253,35 @@ def _internal_test_predict_best_param(area_id,
     fn_test = FMT_TEST_IMAGELIST_PATH.format(prefix=prefix)
     df_test = pd.read_csv(fn_test, index_col='ImageId')
 
+    padding_sz = 59
+
+    shape = [650 + padding_sz*2, 650 + padding_sz*2]
     pred_values_array = np.zeros((len(df_test), 650, 650))
     for idx, image_id in enumerate(df_test.index.tolist()):
-        pred_values = np.zeros((650, 650))
-        pred_count = np.zeros((650, 650))
+        pred_values = np.zeros(shape)
+        pred_count = np.zeros(shape)
         for slice_pos in range(num_slice):
             slice_idx = idx * num_slice + slice_pos
 
-            pos_j = int(math.floor(slice_pos / math.sqrt(num_slice)))
-            pos_i = int(slice_pos % math.sqrt(num_slice))
-            x0 = STRIDE_SZ * pos_j
-            y0 = STRIDE_SZ * pos_i
+            a = np.sqrt(num_slice)
+            pos_j = slice_pos // a
+            pos_i = slice_pos % a
+            stride = (768 - 256) // (a - 1)
+            x0 = int(stride * pos_j)
+            y0 = int(stride * pos_i)
 
             for slice_pred in slice_pred_list:
                 pred_values[x0:x0+INPUT_SIZE, y0:y0+INPUT_SIZE] += (
-                    slice_pred[slice_idx][0])
+                    slice_pred[slice_idx])
                 pred_count[x0:x0+INPUT_SIZE, y0:y0+INPUT_SIZE] += 1
+        pred_values = crop_center(pred_values, padding_sz)
+        pred_count = crop_center(pred_count, padding_sz)
 
         for rescale_pred in rescale_pred_list:
             y_pred_idx = skimage.transform.resize(
                 rescale_pred[idx], (650, 650))
             pred_values += y_pred_idx
-        #pred_count += 1
+            pred_count += 1
 
         # Normalize
         pred_values = pred_values / pred_count
@@ -480,8 +487,8 @@ def cli():
     pass
 
 
-#@cli.command()
-#@click.option('--testonly/--no-testonly', default=True)
+@cli.command()
+@click.option('--testonly/--no-testonly', default=True)
 def testmerge(testonly):
     # file check: test
     for area_id in range(2, 6):
@@ -553,7 +560,7 @@ def testmerge(testonly):
 
 #@cli.command()
 #@click.argument('datapath', type=str)
-def testproc(datapath, y_pred):
+def testproc(datapath, y_pred, num_slice=81):
     area_id = directory_name_to_area_id(datapath)
     prefix = area_id_to_prefix(area_id)
     logger.info(">>>> Test proc for {}".format(prefix))
@@ -585,7 +592,8 @@ def testproc(datapath, y_pred):
     y_pred = _internal_test_predict_best_param(
         area_id,
         rescale_pred_list=[],
-        slice_pred_list=[y_pred],
+        slice_pred_list=y_pred,
+        num_slice=num_slice,
     )
      
 
@@ -659,7 +667,7 @@ def evalfscore(datapath, y_pred_c, y_pred_r, thresh=0.5, num_slice=9, debug=Fals
                 pr = evaluate_record['precision'], evaluate_record['recall']
         return highest_fscore, pr, best_rows
     
-    threshs = np.linspace(0.2, 0.8, 13)
+    threshs = np.linspace(0.65, 0.8, 10)
     res = []
     for thresh in tqdm.tqdm_notebook(threshs):
         res.append(find_thresh(thresh))

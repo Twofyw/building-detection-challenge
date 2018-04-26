@@ -8,3 +8,4 @@ data_train.pickle
 *.log
 *.swp
 *.pyc
+*.swn

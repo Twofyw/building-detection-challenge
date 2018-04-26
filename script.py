@@ -44,7 +44,7 @@ num_slice = args.num_slice
 
 num_gpus = args.num_gpus
 gpu_start = args.gpu_start
-num_workers = 8 if args.learn else 0
+num_workers = 8 if args.learn and not args.rescale else 0
 device_ids = range(gpu_start, gpu_start + num_gpus)
 # device_ids = [0,1,4,5]
 torch.cuda.set_device(gpu_start)
@@ -158,8 +158,9 @@ elif args.test:
                                              debug=args.debug, data=data, num_slice=num_slice, sz=sz,
                                             is_eval=is_eval, is_pred=is_pred)
     learn.load(base_load_path)
-    preds_rescale = [manual_predict(learn)]
-    testproc(datapath, preds_rescale)
+    # predict cropped only once
+    y_preds = [manual_predict(learn)]
+    testproc(datapath, y_preds, num_slice=num_slice)
 
     
 
