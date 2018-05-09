@@ -31,11 +31,16 @@ import shapely.wkt
 MODEL_NAME = 'v5'
 ORIGINAL_SIZE = 650
 # INPUT_SIZE = 256
-INPUT_SIZE = 256
+
+####### variables
+INPUT_SIZE = 640
+IMAGE_DIR = "data/working/images/v5"
+FMT_TEST_IM_STORE = IMAGE_DIR + "/pred_full_rgb_640/"
+FMT_VALTRAIN_IM_FOLDER = IMAGE_DIR + "/trn_full_rgb_640/"
+FMT_VALTEST_IM_FOLDER = IMAGE_DIR + "/test_full_rgb_640/"
 
 BASE_TRAIN_DIR = "data/train"
 WORKING_DIR = "data/working"
-IMAGE_DIR = "data/working/images/v5"
 
 # Input files
 FMT_TRAIN_SUMMARY_PATH = str(
@@ -63,20 +68,17 @@ FMT_MUL_BANDCUT_TH_PATH = IMAGE_DIR + "/mul_bandcut{}.csv"
 FMT_VALTRAIN_IMAGELIST_PATH = IMAGE_DIR + "/{prefix:s}_valtrain_ImageId.csv"
 FMT_VALTRAIN_MASK_STORE = IMAGE_DIR + "/valtrain_{}_mask.h5"
 FMT_VALTRAIN_IM_STORE = IMAGE_DIR + "/valtrain_{}_im.h5"
-FMT_VALTRAIN_IM_FOLDER = IMAGE_DIR + "/trn_full_rgb/"
 FMT_VALTRAIN_MUL_STORE = IMAGE_DIR + "/valtrain_{}_mul.h5"
 
 FMT_VALTEST_IMAGELIST_PATH = IMAGE_DIR + "/{prefix:s}_valtest_ImageId.csv"
 FMT_VALTEST_MASK_STORE = IMAGE_DIR + "/valtest_{}_mask.h5"
 FMT_VALTEST_IM_STORE = IMAGE_DIR + "/valtest_{}_im.h5"
-FMT_VALTEST_IM_FOLDER = IMAGE_DIR + "/test_full_rgb/"
 FMT_VALTEST_MUL_STORE = IMAGE_DIR + "/valtest_{}_mul.h5"
 
 FMT_IMMEAN = IMAGE_DIR + "/{}_immean.h5"
 FMT_MULMEAN = IMAGE_DIR + "/{}_mulmean.h5"
 
 FMT_TEST_IMAGELIST_PATH = IMAGE_DIR + "/{prefix:s}_test_ImageId.csv"
-FMT_TEST_IM_STORE = IMAGE_DIR + "/pred_full_rgb/"
 FMT_TEST_MUL_STORE = IMAGE_DIR + "/test_{}_mul.h5"
 
 # Logger
@@ -235,7 +237,7 @@ def __calc_mul_multiband_cut_threshold(area_id, datapath):
 
 
 def image_mask_resized_from_summary(df, image_id):
-    im_mask = np.zeros((650, 650))
+    im_mask = np.zeros((INPUT_SIZE, INPUT_SIZE))
 
     if len(df[df.ImageId == image_id]) == 0:
         raise RuntimeError("ImageId not found on summaryData: {}".format(
@@ -247,7 +249,7 @@ def image_mask_resized_from_summary(df, image_id):
             coords = list(shape_obj.exterior.coords)
             x = [round(float(pp[0])) for pp in coords]
             y = [round(float(pp[1])) for pp in coords]
-            yy, xx = skimage.draw.polygon(y, x, (650, 650))
+            yy, xx = skimage.draw.polygon(y, x, (INPUT_SIZE, INPUT_SIZE))
             im_mask[yy, xx] = 1
 
             interiors = shape_obj.interiors
@@ -255,9 +257,10 @@ def image_mask_resized_from_summary(df, image_id):
                 coords = list(interior.coords)
                 x = [round(float(pp[0])) for pp in coords]
                 y = [round(float(pp[1])) for pp in coords]
-                yy, xx = skimage.draw.polygon(y, x, (650, 650))
+                yy, xx = skimage.draw.polygon(y, x, (INPUT_SIZE, INPUT_SIZE))
                 im_mask[yy, xx] = 0
-    # im_mask = skimage.transform.resize(im_mask, (INPUT_SIZE, INPUT_SIZE))
+                print(INPUT_SIZE)
+    #im_mask = skimage.transform.resize(im_mask, (INPUT_SIZE, INPUT_SIZE))
     im_mask = (im_mask > 0.5).astype(np.uint8)
     return im_mask
 
@@ -366,7 +369,7 @@ def get_resized_3chan_image_train(image_id, datapath, bandstats):
 
     values = np.swapaxes(values, 0, 2)
     values = np.swapaxes(values, 0, 1)
-    # values = skimage.transform.resize(values, (INPUT_SIZE, INPUT_SIZE))
+    values = skimage.transform.resize(values, (INPUT_SIZE, INPUT_SIZE))
     return values
 
 
@@ -382,7 +385,7 @@ def get_resized_3chan_image_test(image_id, datapath, bandstats):
 
     values = np.swapaxes(values, 0, 2)
     values = np.swapaxes(values, 0, 1)
-    #values = skimage.transform.resize(values, (INPUT_SIZE, INPUT_SIZE))
+    values = skimage.transform.resize(values, (INPUT_SIZE, INPUT_SIZE))
     return values
 
 
@@ -766,12 +769,14 @@ def preproc_train(datapath):
 
     # Mask (Target output)
     # Use h5 to save memory space by broadcasting
-    if Path(FMT_VALTRAIN_MASK_STORE.format(prefix)).exists():
+    # if Path(FMT_VALTRAIN_MASK_STORE.format(prefix)).exists():
+    if False:
         logger.info("Generate MASK (valtrain) ... skip")
     else:
         logger.info("Generate MASK (valtrain)")
         prep_image_mask(area_id, is_valtrain=True)
-    if Path(FMT_VALTEST_MASK_STORE.format(prefix)).exists():
+    # if Path(FMT_VALTEST_MASK_STORE.format(prefix)).exists():
+    if False:
         logger.info("Generate MASK (valtest) ... skip")
     else:
         logger.info("Generate MASK (valtest)")

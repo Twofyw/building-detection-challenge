@@ -16,6 +16,8 @@ import click
 import tables as tb
 import pandas as pd
 import numpy as np
+import shapely
+from shapely import wkt
 import shapely.ops
 import shapely.geometry
 import skimage.transform
@@ -26,8 +28,8 @@ import matplotlib.pyplot as plt
 from concurrent.futures import ThreadPoolExecutor
 
 MODEL_NAME = 'v17'
-ORIGINAL_SIZE = 650
-INPUT_SIZE = 256
+ORIGINAL_SIZE = 640
+INPUT_SIZE = 640
 STRIDE_SZ = 197
 
 LOGFORMAT = '%(asctime)s %(levelname)s %(message)s'
@@ -309,8 +311,8 @@ def _internal_validate_predict_best_param(area_id,
     padding_sz = 59
 
     length = 9 if debug else len(df_valtest)
-    shape = [650 + padding_sz*2, 650 + padding_sz*2]
-    pred_values_array = np.zeros([length] + [650, 650])
+    shape = [INPUT_SIZE + padding_sz*2, INPUT_SIZE + padding_sz*2]
+    pred_values_array = np.zeros([length] + [INPUT_SIZE, INPUT_SIZE])
     #print(length)
     for idx, image_id in enumerate(df_valtest.index.tolist()[:length]):
         pred_values = np.zeros(shape)
@@ -335,7 +337,7 @@ def _internal_validate_predict_best_param(area_id,
 
         for rescale_pred in rescale_pred_list:
             y_pred_idx = skimage.transform.resize(
-                rescale_pred[idx], (650, 650))
+                rescale_pred[idx], (INPUT_SIZE, INPUT_SIZE))
             pred_values += y_pred_idx
             pred_count += 1
 
@@ -475,7 +477,7 @@ def mask_to_poly(mask, min_polygon_area_th=MIN_POLYGON_AREA,
 
     df = df[df.area_size > min_polygon_area_th].sort_values(
         by='area_size', ascending=False)
-    df.loc[:, 'wkt'] = df.poly.apply(lambda x: shapely.wkt.dumps(
+    df.loc[:, 'wkt'] = df.poly.apply(lambda x: wkt.dumps(
         x, rounding_precision=0))
     df.loc[:, 'bid'] = list(range(1, len(df) + 1))
     df.loc[:, 'area_ratio'] = df.area_size / df.area_size.max()
@@ -667,7 +669,7 @@ def evalfscore(datapath, y_pred_c, y_pred_r, thresh=0.5, num_slice=9, debug=Fals
                 pr = evaluate_record['precision'], evaluate_record['recall']
         return highest_fscore, pr, best_rows
     
-    threshs = np.linspace(0.65, 0.8, 10)
+    threshs = np.linspace(0.5, 1, 6)
     res = []
     for thresh in tqdm.tqdm_notebook(threshs):
         res.append(find_thresh(thresh))

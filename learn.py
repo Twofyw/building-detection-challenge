@@ -321,8 +321,9 @@ def get_md_model(datapaths, data, bs, device_ids, num_workers, model_name='unet'
     for o in aug_tfms: o.tfm_y = TfmType.CLASS
         
     area_ids = [directory_name_to_area_id(datapath) for datapath in datapaths]
-    stats = np.mean([get_rgb_mean_stat(area_id) for area_id in area_ids], axis=0)
-    tfms = tfms_from_stats(stats, sz, crop_type=CropType.NO, tfm_y=TfmType.CLASS, aug_tfms=aug_tfms)
+    #stats = np.mean([get_rgb_mean_stat(area_id) for area_id in area_ids], axis=0)
+    #tfms = tfms_from_stats(stats, sz, crop_type=CropType.NO, tfm_y=TfmType.CLASS, aug_tfms=aug_tfms)
+    tfms = tfms_from_model(vgg16, sz, crop_type=CropType.NO, tfm_y=TfmType.CLASS, aug_tfms=aug_tfms)
     
     (trn_x,trn_y), (val_x,val_y) = data
     trn, val = ((True, no_y), (False, no_y))

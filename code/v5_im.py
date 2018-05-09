@@ -759,11 +759,11 @@ def preproc_train(datapath):
     #     calc_rgb_multiband_cut_threshold(area_id, datapath)
 
     # Band stats (MUL)
-    if Path(FMT_MUL_BANDCUT_TH_PATH.format(prefix)).exists():
-        logger.info("Generate band stats csv (MUL) ... skip")
-    else:
-        logger.info("Generate band stats csv (MUL)")
-        calc_mul_multiband_cut_threshold(area_id, datapath)
+    # if Path(FMT_MUL_BANDCUT_TH_PATH.format(prefix)).exists():
+    #     logger.info("Generate band stats csv (MUL) ... skip")
+    # else:
+    #     logger.info("Generate band stats csv (MUL)")
+    #     calc_mul_multiband_cut_threshold(area_id, datapath)
 
     # Mask (Target output)
     # if Path(FMT_VALTRAIN_MASK_STORE.format(prefix)).exists():
