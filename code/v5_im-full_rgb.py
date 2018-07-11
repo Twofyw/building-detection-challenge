@@ -33,11 +33,11 @@ ORIGINAL_SIZE = 650
 # INPUT_SIZE = 256
 
 ####### variables
-INPUT_SIZE = 640
+INPUT_SIZE = 650
 IMAGE_DIR = "data/working/images/v5"
-FMT_TEST_IM_STORE = IMAGE_DIR + "/pred_full_rgb_640/"
-FMT_VALTRAIN_IM_FOLDER = IMAGE_DIR + "/trn_full_rgb_640/"
-FMT_VALTEST_IM_FOLDER = IMAGE_DIR + "/test_full_rgb_640/"
+FMT_TEST_IM_STORE = IMAGE_DIR + "/pred_full_rgb/"
+FMT_VALTRAIN_IM_FOLDER = IMAGE_DIR + "/trn_full_rgb/"
+FMT_VALTEST_IM_FOLDER = IMAGE_DIR + "/test_full_rgb/"
 
 BASE_TRAIN_DIR = "data/train"
 WORKING_DIR = "data/working"
@@ -369,7 +369,7 @@ def get_resized_3chan_image_train(image_id, datapath, bandstats):
 
     values = np.swapaxes(values, 0, 2)
     values = np.swapaxes(values, 0, 1)
-    values = skimage.transform.resize(values, (INPUT_SIZE, INPUT_SIZE))
+    #values = skimage.transform.resize(values, (INPUT_SIZE, INPUT_SIZE))
     return values
 
 
@@ -385,7 +385,7 @@ def get_resized_3chan_image_test(image_id, datapath, bandstats):
 
     values = np.swapaxes(values, 0, 2)
     values = np.swapaxes(values, 0, 1)
-    values = skimage.transform.resize(values, (INPUT_SIZE, INPUT_SIZE))
+    #values = skimage.transform.resize(values, (INPUT_SIZE, INPUT_SIZE))
     return values
 
 
@@ -598,6 +598,7 @@ def prep_test_imagelist(area_id, datapath):
     image_id_list = glob.glob(str(
         Path(datapath) /
         Path("./PAN/PAN_{prefix:s}_*.tif")).format(prefix=prefix))
+    print("./PAN/PAN_{prefix:s}_*.tif".format(prefix=prefix))
     image_id_list = [path.split("PAN_")[-1][:-4] for path in image_id_list]
     pd.DataFrame({'ImageId': image_id_list}).to_csv(
         FMT_TEST_IMAGELIST_PATH.format(prefix=prefix),
@@ -836,7 +837,8 @@ def preproc_test(datapath):
     logger.info("preproc_test for {}".format(prefix))
 
     # Imagelist
-    if Path(FMT_TEST_IMAGELIST_PATH.format(prefix=prefix)).exists():
+    #if Path(FMT_TEST_IMAGELIST_PATH.format(prefix=prefix)).exists():
+    if False:
         logger.info("Generate IMAGELIST for inference ... skip")
     else:
         logger.info("Generate IMAGELIST for inference")

@@ -28,9 +28,10 @@ import matplotlib.pyplot as plt
 from concurrent.futures import ThreadPoolExecutor
 
 MODEL_NAME = 'v17'
-ORIGINAL_SIZE = 640
-INPUT_SIZE = 640
-STRIDE_SZ = 197
+ORIGINAL_SIZE = 650
+INPUT_SIZE = 256
+#STRIDE_SZ = 197
+padding_sz = 59
 
 LOGFORMAT = '%(asctime)s %(levelname)s %(message)s'
 BASE_DIR = "data/train"
@@ -249,16 +250,16 @@ def _internal_test_predict_best_param(area_id,
                                       rescale_pred_list=[],
                                       slice_pred_list=[],
                                       num_slice=9):
+    # padding
+
     prefix = area_id_to_prefix(area_id)
 
     # Load test imagelist
     fn_test = FMT_TEST_IMAGELIST_PATH.format(prefix=prefix)
     df_test = pd.read_csv(fn_test, index_col='ImageId')
 
-    padding_sz = 59
-
-    shape = [650 + padding_sz*2, 650 + padding_sz*2]
     pred_values_array = np.zeros((len(df_test), 650, 650))
+    shape = (768, 768)
     for idx, image_id in enumerate(df_test.index.tolist()):
         pred_values = np.zeros(shape)
         pred_count = np.zeros(shape)
@@ -311,8 +312,8 @@ def _internal_validate_predict_best_param(area_id,
     padding_sz = 59
 
     length = 9 if debug else len(df_valtest)
-    shape = [INPUT_SIZE + padding_sz*2, INPUT_SIZE + padding_sz*2]
-    pred_values_array = np.zeros([length] + [INPUT_SIZE, INPUT_SIZE])
+    shape = [650 + padding_sz*2, 650 + padding_sz*2]
+    pred_values_array = np.zeros([length] + [650, 650])
     #print(length)
     for idx, image_id in enumerate(df_valtest.index.tolist()[:length]):
         pred_values = np.zeros(shape)
@@ -594,7 +595,7 @@ def testproc(datapath, y_pred, num_slice=81):
     y_pred = _internal_test_predict_best_param(
         area_id,
         rescale_pred_list=[],
-        slice_pred_list=y_pred,
+        slice_pred_list=[y_pred],
         num_slice=num_slice,
     )
      

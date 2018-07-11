@@ -8,9 +8,9 @@ from tqdm import tqdm_notebook
 from concurrent.futures import ThreadPoolExecutor
 import sys
 sys.path.insert(0, 'code')
-sys.path.insert(0, 'deeplab/pytorch-deeplab-resnet')
+#sys.path.insert(0, 'deeplab/pytorch-deeplab-resnet')
 from v17 import *
-import deeplab_resnet
+#import deeplab_resnet
 from models import *
 import torch
 import torch.nn as nn
@@ -26,9 +26,13 @@ IMAGE_DIR = "data/working/images/{}".format('v5')
 
 # ---------------------------------------------------------
 # Image list, Image container and mask container
-FMT_VALTRAIN_IM_FOLDER = IMAGE_DIR + "/trn_full_rgb_640/"
-FMT_VALTEST_IM_FOLDER = IMAGE_DIR + "/test_full_rgb_640/"
-FMT_TEST_IM_STORE = IMAGE_DIR + "/pred_full_rgb_640/"
+FMT_VALTRAIN_IM_FOLDER = IMAGE_DIR + "/trn_full_rgb/"
+FMT_VALTEST_IM_FOLDER = IMAGE_DIR + "/test_full_rgb/"
+FMT_TEST_IM_STORE = IMAGE_DIR + "/pred_full_rgb/"
+
+# FMT_VALTRAIN_IM_FOLDER = IMAGE_DIR + "/trn_full_rgb_640/"
+# FMT_VALTEST_IM_FOLDER = IMAGE_DIR + "/test_full_rgb_640/"
+# FMT_TEST_IM_STORE = IMAGE_DIR + "/pred_full_rgb_640/"
 
 FMT_VALTRAIN_IMAGELIST_PATH = IMAGE_DIR + "/{prefix:s}_valtrain_ImageId.csv"
 FMT_VALTEST_IMAGELIST_PATH = IMAGE_DIR + "/{prefix:s}_valtest_ImageId.csv"
@@ -125,6 +129,14 @@ class GlobalArraysDataset(BaseDataset):
         if type(arr) is not np.ndarray: arr = to_np(arr)
         if len(arr.shape)==3: arr = arr[None]
         return np.clip(self.transform.denorm(np.rollaxis(arr,1,4)), 0, 1)
+
+
+    
+
+
+
+
+
 
 class UpsampleModel():
     def __init__(self, model, cut_base=8, name='upsample'):

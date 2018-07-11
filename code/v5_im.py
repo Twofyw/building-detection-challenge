@@ -766,16 +766,16 @@ def preproc_train(datapath):
     #     calc_mul_multiband_cut_threshold(area_id, datapath)
 
     # Mask (Target output)
-    # if Path(FMT_VALTRAIN_MASK_STORE.format(prefix)).exists():
-    #     logger.info("Generate MASK (valtrain) ... skip")
-    # else:
-    #     logger.info("Generate MASK (valtrain)")
-    #     prep_image_mask(area_id, is_valtrain=True)
-    # if Path(FMT_VALTEST_MASK_STORE.format(prefix)).exists():
-    #     logger.info("Generate MASK (valtest) ... skip")
-    # else:
-    #     logger.info("Generate MASK (valtest)")
-    #     prep_image_mask(area_id, is_valtrain=False)
+    if Path(FMT_VALTRAIN_MASK_STORE.format(prefix)).exists():
+        logger.info("Generate MASK (valtrain) ... skip")
+    else:
+        logger.info("Generate MASK (valtrain)")
+        prep_image_mask(area_id, is_valtrain=True)
+    if Path(FMT_VALTEST_MASK_STORE.format(prefix)).exists():
+        logger.info("Generate MASK (valtest) ... skip")
+    else:
+        logger.info("Generate MASK (valtest)")
+        prep_image_mask(area_id, is_valtrain=False)
 
     # Image HDF5 store (RGB)
     # if Path(FMT_VALTRAIN_IM_STORE.format(prefix)).exists():

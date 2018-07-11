@@ -1,7 +1,7 @@
 import argparse
 helpstr = """ Accepts an datapath index. Cities are arranged in the order of:
 'data/train/AOI_2_Vegas_Train', 'data/train/AOI_3_Paris_Train', 
-             'data/train/AOI_4_Shanghai_Train', 'data/train/AOI_5_Khartoum_Train'
+
 
 """
 parser = argparse.ArgumentParser(description=helpstr)
@@ -77,7 +77,7 @@ def manual_predict(learn):
         end = min(n, o + bs)
         X = np.moveaxis(learn.data.val_ds.transform.norm([learn.data.val_ds.get_x(o) for o in range(o, end)])[0], -1, 1)
         preds[o:end] = sigmoid(learn.predict_array(X).squeeze())
-    preds = skimage.transform.resize(preds, (650, 650))
+    #preds = skimage.transform.resize(preds, (650, 650))
     return preds
  
 
@@ -119,6 +119,13 @@ if args.learn:
 
 
 
+
+
+
+
+
+
+
 ################################### pred
 elif args.pred:
        
@@ -131,8 +138,8 @@ elif args.pred:
         base_load_path = args.load_starter
     learn.load(base_load_path)
     learn.model.eval()
-    preds_crop = []
-    preds_scale = [manual_predict(learn)]
+    preds_crop = [manual_predict(learn)]
+    preds_scale = []
 
     # use rescale
     #if args.rescale:
@@ -153,6 +160,12 @@ elif args.pred:
                 debug=args.debug, num_slice=num_slice)
         # fscores is automatically imported into jupyter notebook
         
+
+
+
+
+
+
 
 
 
